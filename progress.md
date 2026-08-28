@@ -54,7 +54,7 @@
   数式は formulaValue・文字列は stringValue、入力規則が全試合ぶんスマホ用タブに出る、入力セルに未入力色が付く。
 - `npm test`: 33件すべてPASS。
 - 残る未実施は「実際にDriveへ適用して読み戻す」検証のみ。google-multi MCP の再接続待ち。
-- google-multi MCP が復帰。検証用スプレッドシート `1sGqI1SITgbkzjBntiOU6Z70xY5bA08JOa0qumCduUdc` を作成し、
+- google-multi MCP が復帰。検証用スプレッドシートを作成し、
   試合管理・スマホ用の155セルを USER_ENTERED で書き込み。
 - 未入力状態の読み戻しは正常（1回戦は仮チーム名、以降は空欄、全行「未入力」、数式エラー0）。
 - 全12試合を投入したところ、②（C vs D、結果 2-1）の勝者が D になる不具合を検出。

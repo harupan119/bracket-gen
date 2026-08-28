@@ -1,3 +1,4 @@
 node_modules/
 tmp/
 *.local.yaml
+.DS_Store
