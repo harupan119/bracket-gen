@@ -160,3 +160,58 @@ test('補助列はブラケットの右端より外に置かれる', () => {
     assert.ok(minHelper > maxVisible, `${teams}チーム: 補助列(${minHelper})が表示列(${maxVisible})と衝突`);
   }
 });
+
+test('ダブルは敗者側も図として描かれる', () => {
+  for (const teams of [8, 10, 16]) {
+    const t = buildTournament({ format: 'double-elimination', teams, courts: 2, scoring: 'win-loss' });
+    assert.ok(t.loserTree, `${teams}: loserTree が無い`);
+    const kinds = t.loserTree.levels.map((l) => l.kind);
+    assert.equal(kinds[0], 'drop', '最初は勝者側1回戦の敗者');
+    // 以降は小ラウンドと大ラウンドの交互
+    for (let i = 1; i < kinds.length; i++) {
+      assert.equal(kinds[i], i % 2 === 1 ? 'minor' : 'major', `${teams}: ${i}番目`);
+    }
+    const g = layoutBracketSheet(t);
+    const heads = [...g.cells.values()]
+      .filter((c) => c.col === 1 && String(c.value).startsWith('■'))
+      .map((c) => String(c.value));
+    assert.ok(heads.some((h) => h.includes('勝者側ブラケット')), `${teams}: 勝者側の図が無い`);
+    assert.ok(heads.some((h) => h.includes('敗者側ブラケット')), `${teams}: 敗者側の図が無い`);
+    // 敗者側がリストに落ちていないこと
+    assert.ok(!heads.some((h) => /敗者側 \d+回戦/.test(h)), `${teams}: 敗者側がリスト表示のまま`);
+  }
+});
+
+test('敗者側は小ラウンドで行が寄り、大ラウンドで動かない', () => {
+  const t = buildTournament({ format: 'double-elimination', teams: 16, courts: 4, scoring: 'win-loss' });
+  const g = layoutBracketSheet(t);
+  const head = [...g.cells.values()].find((c) => c.col === 1 && String(c.value).includes('敗者側ブラケット'));
+  const base = head.row + 1;
+  // 敗者側の区画だけを見る。下には決勝や最終順位が続くので範囲を区切る。
+  const end = base + t.loserTree.levels[0].refs.length * 2;
+  const at = (col) => [...g.cells.values()]
+    .filter((c) => c.col === col && c.row > base && c.row <= end && !c.style.helper)
+    .map((c) => c.row).sort((a, b) => a - b);
+  const drop = at(2);   // 8スロット
+  const minor = at(4);  // 小ラウンド: 4スロット、対の中点へ
+  const major = at(6);  // 大ラウンド: 4スロット、行は動かない
+  assert.equal(drop.length, 8);
+  assert.equal(minor.length, 4);
+  assert.equal(major.length, 4);
+  assert.deepEqual(minor, [0, 1, 2, 3].map((i) => Math.round((drop[i * 2] + drop[i * 2 + 1]) / 2)));
+  assert.deepEqual(major, minor, '大ラウンドは行を動かさない');
+});
+
+test('ブラケットの頂点は優勝でなく「次の試合」を指す', () => {
+  // 敗者側の頂点は決勝へ進むだけで優勝ではない。
+  const t = buildTournament({ format: 'double-elimination', teams: 10, courts: 4, scoring: 'win-loss' });
+  const g = layoutBracketSheet(t);
+  const label = (id) => t.matches.find((m) => m.id === id)?.label;
+  const champs = [...g.cells.values()].filter((c) => c.style.championOf);
+  // 優勝タグは最終順位の1位だけ
+  assert.equal(champs.length, 1, `championOf が多すぎる: ${champs.length}`);
+  assert.equal(label(champs[0].style.championOf), '決勝R');
+  // 勝者側と敗者側の頂点は決勝を指す
+  const toFinal = [...g.cells.values()].filter((c) => c.style.winnerOf && label(c.style.winnerOf) === '決勝');
+  assert.ok(toFinal.length >= 2, '両ブラケットの頂点が決勝を指していない');
+});

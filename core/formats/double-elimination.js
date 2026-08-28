@@ -60,6 +60,10 @@ export function buildDoubleElimination({ teams, bracketReset = true }) {
   // ---- 敗者側 ----
   let pool = wbLosers[0] ?? [];
   let lr = 1;
+  // 敗者側も図にするため、各ラウンドのスロット列と種別を残す。
+  // 小ラウンド（minor）はスロットが半分になり、大ラウンド（major）は数が変わらない。
+  // この違いで行の詰め方が変わるので、種別を持たせておく必要がある。
+  const lbLevels = pool.length ? [{ refs: pool.slice(), kind: 'drop' }] : [];
   for (let r = 1; r < wbLosers.length; r++) {
     const minor = [];
     for (let i = 0; i < pool.length; i += 2) {
@@ -67,6 +71,7 @@ export function buildDoubleElimination({ teams, bracketReset = true }) {
     }
     lr += 1;
     pool = minor;
+    lbLevels.push({ refs: pool.slice(), kind: 'minor' });
 
     const drop = wbLosers[r];
     const major = [];
@@ -75,6 +80,7 @@ export function buildDoubleElimination({ teams, bracketReset = true }) {
     }
     lr += 1;
     pool = major;
+    lbLevels.push({ refs: pool.slice(), kind: 'major' });
   }
   const lbChampion = pool[0] ?? BYE;
 
@@ -154,6 +160,13 @@ export function buildDoubleElimination({ teams, bracketReset = true }) {
       size,
       levels: levels.map((lv) => lv.map((r) => (isBye(r) ? null : resolve(r)))),
       title: '勝者側ブラケット'
+    },
+    loserTree: {
+      title: '敗者側ブラケット',
+      levels: lbLevels.map((lv) => ({
+        kind: lv.kind,
+        refs: lv.refs.map((r) => (isBye(r) ? null : resolve(r))),
+      })),
     },
     teamLabels: Array.from({ length: teams }, (_, i) => teamLabel(i)),
     rounds: wbRounds,

@@ -89,6 +89,9 @@ export function layoutBracketSheet(tournament) {
   if (tournament.tree) {
     row = renderTree(g, tournament, row, inBracket);
   }
+  if (tournament.loserTree) {
+    row = renderLoserTree(g, tournament, row, inBracket);
+  }
   const groups = tournament.tree ? [] : terminalGroups(tournament);
   for (const gr of groups) {
     for (const id of [...gr.semis.map((s) => s.id), gr.final.id, gr.consolation.id]) inBracket.add(id);
@@ -272,7 +275,20 @@ export function eliminationRule(t) {
   return '1敗で敗退';
 }
 
-export function subtitle(t) {
+export /**
+ * そのスロットが表示しているチームの「次の試合」を返す。
+ * 図の中に親がいればそれ。図の頂点なら、模型上の勝ち上がり先（決勝など）を見る。
+ * どこへも進まないなら null（＝そのブラケットの優勝）。
+ */
+function nextMatchOf(tournament, ref, parentRef) {
+  if (parentRef && parentRef.type === 'winner') return parentRef.match;
+  if (ref && ref.type === 'winner') {
+    return tournament.matches.find((m) => m.id === ref.match)?.winnerTo ?? null;
+  }
+  return null;
+}
+
+function subtitle(t) {
   return `全${t.matches.length}試合／${eliminationRule(t)}／1位〜${t.placements}位まで確定`;
 }
 
@@ -305,17 +321,78 @@ function renderTree(g, tournament, startRow, inBracket) {
       const { row: r, col: c } = bracketCell(base, j, i);
       // このスロットの勝ち上がり先は、ひとつ上のラウンドの対応スロット
       const parent = levels[j + 1] ? levels[j + 1][Math.floor(i / 2)] : null;
-      const base2 = { role: j === 0 ? 'team' : 'slot' };
-      const style =
-        parent && parent.type === 'winner'
-          ? { ...base2, winnerOf: parent.match }
-          : j === levels.length - 1 && ref.type === 'winner'
-            ? { ...base2, championOf: ref.match }
-            : base2;
+      const style = { role: j === 0 ? 'team' : 'slot' };
+      const next = nextMatchOf(tournament, ref, parent);
+      if (next) style.winnerOf = next;
+      else if (ref.type === 'winner') style.championOf = ref.match;
       g.set(r, c, liveRefFormula(tournament, ref), style);
       if (ref.type === 'winner') inBracket.add(ref.match);
     });
   });
 
   return base + bracketHeight(levels[0].length) + 1;
+}
+
+/**
+ * 敗者側を図として描く。
+ *
+ * 勝者側と違って木構造にならない。小ラウンド（敗者同士）でスロットが半分になり、
+ * 大ラウンド（勝者側の脱落者と対戦）では数が変わらないため、行間隔が倍々にならない。
+ * そこで行位置を反復で追う: 小ラウンドでは対になる2つの中点へ寄せ、大ラウンドでは動かさない。
+ */
+function renderLoserTree(g, tournament, startRow, inBracket) {
+  const { levels, title } = tournament.loserTree;
+  if (!levels.length) return startRow;
+
+  let row = startRow;
+  g.set(row, 1, `■ ${title}`, { role: 'section' });
+  g.merge(row, 1, row, 6);
+  row += 1;
+  const base = row;
+
+  let rows = levels[0].refs.map((_, i) => base + 2 * i + 1);
+  const placed = [{ rows, level: levels[0], col: 2 }];
+
+  for (let j = 1; j < levels.length; j++) {
+    if (levels[j].kind === 'minor') {
+      const next = [];
+      for (let i = 0; i < levels[j].refs.length; i++) {
+        next.push(Math.round((rows[i * 2] + rows[i * 2 + 1]) / 2));
+      }
+      rows = next;
+    }
+    placed.push({ rows: rows.slice(), level: levels[j], col: 2 + 2 * j });
+  }
+
+  placed.forEach((p, j) => {
+    p.level.refs.forEach((ref, i) => {
+      if (!ref) return;
+      const parent = placed[j + 1];
+      const parentRef = parent
+        ? parent.level.refs[parent.level.kind === 'minor' ? Math.floor(i / 2) : i]
+        : null;
+      const style = { role: j === 0 ? 'team' : 'slot' };
+      const next = nextMatchOf(tournament, ref, parentRef);
+      if (next) style.winnerOf = next;
+      else if (ref.type === 'winner') style.championOf = ref.match;
+      g.set(p.rows[i], p.col, liveRefFormula(tournament, ref), style);
+      if (ref.type === 'winner') inBracket.add(ref.match);
+      // 横線。小ラウンドの合流は下で縦線もつなぐ
+      g.border(p.rows[i], p.col, p.rows[i], p.col, 'bottom');
+    });
+
+    const next = placed[j + 1];
+    if (next && next.level.kind === 'minor') {
+      for (let k = 0; k < next.level.refs.length; k++) {
+        if (!next.level.refs[k]) continue;
+        const top = p.rows[k * 2];
+        const bottom = p.rows[k * 2 + 1];
+        const conn = p.col + 1;
+        g.border(top + 1, conn, bottom, conn, 'left');
+        g.border(next.rows[k], conn, next.rows[k], conn, 'bottom');
+      }
+    }
+  });
+
+  return base + levels[0].refs.length * 2 + 1;
 }
