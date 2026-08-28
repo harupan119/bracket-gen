@@ -194,3 +194,12 @@
   シングル／ダブルでは試合数が一定にならないので誤り。`eliminationRule` を共有関数にして両方から使う形へ。
   「シングル／ダブルで『各チームN試合』と書かない」を回帰テストで固定。
 - `npm test`: 73件すべてPASS。バンドル再生成。
+- Phase 8。公開前の機微情報検査で4件を検出。
+  (1) `.DS_Store` が追跡されていた (2) progress.md に検証用スプレッドシートID
+  (3) findings.md にメールアドレス (4) **13コミットのメッセージに `Claude-Session:` のセッションURL**。
+  (1)〜(3) はファイルを修正、(4) は未pushだったため `filter-branch --msg-filter` で該当行のみ除去した。
+  `Co-Authored-By` は14件すべて保持。バックアップは `refs/original` に残る。
+- `gh repo create bracket-gen --public --source=. --push` で公開。
+  https://github.com/harupan119/bracket-gen
+- リモート側で再検査し、`Claude-Session` 0件・メールアドレス0件・`.DS_Store` 0件を確認。
+- Phase 8完了。

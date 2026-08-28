@@ -77,9 +77,9 @@ Google Sheets を生成する仕組みを作る。サークル内で代々引き
 
 ### Phase 8: 公開
 - [x] README（継承リスクの明記を含む）とLICENSE(MIT)を書く
-- [ ] スプレッドシートID・認証情報が含まれないことを確認する
-- [ ] `gh repo create bracket-gen --public --source=.`
-- **Status:** not started
+- [x] スプレッドシートID・認証情報が含まれないことを確認する
+- [x] `gh repo create bracket-gen --public --source=.`
+- **Status:** complete
 
 ## エラー記録
 | エラー | 試行 | 対応 |
@@ -107,3 +107,4 @@ Google Sheets を生成する仕組みを作る。サークル内で代々引き
 | 枝を結ぶ罫線が無く、名前が列に浮いているだけだった | 1 | `drawBranches` を追加。チーム名セルの下線＝横線、連結列の左罫線＝縦線 |
 | 補助列がブラケットの列と衝突（8チームでH列） | 1 | 補助列をブラケット右端の外へ動的に配置する `helperCols` へ変更 |
 | 進行表の説明文だけ「各チーム3試合」の誤りが残っていた | 1 | トーナメント表側だけ直していた。`eliminationRule` を共有し、両方から使う |
+| 公開前検査で機微情報4件を検出（.DS_Store追跡、スプレッドシートID、メールアドレス、13コミットのセッションURL） | 1 | ファイル3件を伏せ字化・追跡解除し、履歴は `filter-branch --msg-filter` でセッションURL行のみ除去 |
