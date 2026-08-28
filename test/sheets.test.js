@@ -135,3 +135,21 @@ test('4タブすべてでセル衝突が起きない', async () => {
     }
   }
 });
+
+test('シングル／ダブルで「各チームN試合」と書かない', async () => {
+  // 1敗（2敗）で敗退する形式では試合数が一定にならないので、この表現は誤り。
+  const { layoutBracketSheet } = await import('../core/layout.js');
+  for (const format of ['single-elimination', 'double-elimination']) {
+    for (const teams of [8, 10, 16]) {
+      const t = buildTournament({ format, teams, courts: 2, scoring: 'win-loss' });
+      for (const fn of [layoutBracketSheet, layoutProgressSheet]) {
+        const texts = [...fn(t).cells.values()].map((c) => String(c.value));
+        assert.ok(!texts.some((x) => /各チーム\d+試合/.test(x)), `${format} ${teams} ${fn.name}`);
+      }
+    }
+  }
+  // 完全順位決定は全員同じ試合数なので、書いてよい
+  const fp = buildTournament({ format: 'full-placement', teams: 8, courts: 2, scoring: 'win-loss' });
+  const t2 = [...layoutProgressSheet(fp).cells.values()].map((c) => String(c.value));
+  assert.ok(t2.some((x) => /各チーム3試合/.test(x)), '完全順位決定では明記する');
+});

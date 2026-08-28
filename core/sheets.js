@@ -1,5 +1,6 @@
 import { Grid } from './grid.js';
 import { getScoring } from './scoring.js';
+import { eliminationRule } from './layout.js';
 
 export const TABS = {
   bracket: 'トーナメント表',
@@ -113,7 +114,7 @@ export function layoutProgressSheet(tournament) {
     .setColumnWidth(4, 26).setColumnWidth(5, 12).setColumnWidth(6, 16);
 
   g.set(1, 1, tournament.title || `進行表（${tournament.teams}チーム・全${tournament.matches.length}試合）`, { bold: true, size: 14 });
-  g.set(2, 1, `コート${tournament.courts}面／全${tournament.slots.length}枠／各チーム${tournament.rounds}試合／1位〜${tournament.placements}位まで確定`);
+  g.set(2, 1, `コート${tournament.courts}面／全${tournament.slots.length}枠／全${tournament.matches.length}試合／${eliminationRule(tournament)}`);
 
   g.set(4, 1, '■ 出場チーム（ここに記入すると全タブの対戦カードに反映されます）', { bold: true });
   g.set(5, 1, '記号', { bold: true });

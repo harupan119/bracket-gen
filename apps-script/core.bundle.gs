@@ -670,7 +670,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     const g = new Grid(TABS.progress);
     g.setColumnWidth(1, 8).setColumnWidth(2, 20).setColumnWidth(3, 8).setColumnWidth(4, 26).setColumnWidth(5, 12).setColumnWidth(6, 16);
     g.set(1, 1, tournament.title || `\u9032\u884C\u8868\uFF08${tournament.teams}\u30C1\u30FC\u30E0\u30FB\u5168${tournament.matches.length}\u8A66\u5408\uFF09`, { bold: true, size: 14 });
-    g.set(2, 1, `\u30B3\u30FC\u30C8${tournament.courts}\u9762\uFF0F\u5168${tournament.slots.length}\u67A0\uFF0F\u5404\u30C1\u30FC\u30E0${tournament.rounds}\u8A66\u5408\uFF0F1\u4F4D\u301C${tournament.placements}\u4F4D\u307E\u3067\u78BA\u5B9A`);
+    g.set(2, 1, `\u30B3\u30FC\u30C8${tournament.courts}\u9762\uFF0F\u5168${tournament.slots.length}\u67A0\uFF0F\u5168${tournament.matches.length}\u8A66\u5408\uFF0F${eliminationRule(tournament)}`);
     g.set(4, 1, "\u25A0 \u51FA\u5834\u30C1\u30FC\u30E0\uFF08\u3053\u3053\u306B\u8A18\u5165\u3059\u308B\u3068\u5168\u30BF\u30D6\u306E\u5BFE\u6226\u30AB\u30FC\u30C9\u306B\u53CD\u6620\u3055\u308C\u307E\u3059\uFF09", { bold: true });
     g.set(5, 1, "\u8A18\u53F7", { bold: true });
     g.set(5, 2, "\u30C1\u30FC\u30E0\u540D", { bold: true });
@@ -893,16 +893,13 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       g.border(root.row, root.col, root.row, root.col, "bottom");
     }
   }
+  function eliminationRule(t) {
+    if (t.format === "full-placement") return `\u5404\u30C1\u30FC\u30E0${t.rounds}\u8A66\u5408`;
+    if (t.format === "double-elimination") return "2\u6557\u3067\u6557\u9000";
+    return "1\u6557\u3067\u6557\u9000";
+  }
   function subtitle(t) {
-    const total = `\u5168${t.matches.length}\u8A66\u5408`;
-    const rank = `1\u4F4D\u301C${t.placements}\u4F4D\u307E\u3067\u78BA\u5B9A`;
-    if (t.format === "full-placement") {
-      return `${total}\uFF0F\u5404\u30C1\u30FC\u30E0${t.rounds}\u8A66\u5408\uFF0F${rank}`;
-    }
-    if (t.format === "double-elimination") {
-      return `${total}\uFF0F2\u6557\u3067\u6557\u9000\uFF0F${rank}`;
-    }
-    return `${total}\uFF0F1\u6557\u3067\u6557\u9000\uFF0F${rank}`;
+    return `\u5168${t.matches.length}\u8A66\u5408\uFF0F${eliminationRule(t)}\uFF0F1\u4F4D\u301C${t.placements}\u4F4D\u307E\u3067\u78BA\u5B9A`;
   }
   function renderTree(g, tournament, startRow, inBracket) {
     var _a;

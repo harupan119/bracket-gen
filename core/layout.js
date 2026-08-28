@@ -246,16 +246,18 @@ function drawBranches(g, base, levelSizes, filled) {
   }
 }
 
-function subtitle(t) {
-  const total = `全${t.matches.length}試合`;
-  const rank = `1位〜${t.placements}位まで確定`;
-  if (t.format === 'full-placement') {
-    return `${total}／各チーム${t.rounds}試合／${rank}`;
-  }
-  if (t.format === 'double-elimination') {
-    return `${total}／2敗で敗退／${rank}`;
-  }
-  return `${total}／1敗で敗退／${rank}`;
+/**
+ * 敗退の規則。完全順位決定だけは全員が同じ試合数を戦うので、そう書ける。
+ * シングル／ダブルでは試合数が一定にならないため「各チームN試合」とは書けない。
+ */
+export function eliminationRule(t) {
+  if (t.format === 'full-placement') return `各チーム${t.rounds}試合`;
+  if (t.format === 'double-elimination') return '2敗で敗退';
+  return '1敗で敗退';
+}
+
+export function subtitle(t) {
+  return `全${t.matches.length}試合／${eliminationRule(t)}／1位〜${t.placements}位まで確定`;
 }
 
 /**
