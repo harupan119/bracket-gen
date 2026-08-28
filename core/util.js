@@ -13,3 +13,18 @@ export function teamLabel(i) {
 export function isPowerOfTwo(n) {
   return Number.isInteger(n) && n > 0 && (n & (n - 1)) === 0;
 }
+
+/**
+ * 標準のブラケットシード順。1位と最下位が最も遠い位置になるよう再帰的に折り返す。
+ * size は2の冪。返り値は各スロットに入るシード番号。
+ */
+export function seedOrder(size) {
+  let order = [1];
+  while (order.length < size) {
+    const n = order.length * 2;
+    const next = [];
+    for (const s of order) next.push(s, n + 1 - s);
+    order = next;
+  }
+  return order;
+}

@@ -1,20 +1,10 @@
-import { circled, teamLabel } from '../util.js';
+import { circled, teamLabel, seedOrder } from '../util.js';
+
+export { seedOrder };
 import { validateTeams } from '../validate.js';
 
 const BYE = { type: 'bye' };
 const isBye = (r) => r.type === 'bye';
-
-/** 標準のシード順（1 vs 最下位 で再帰的に折り返す）。 */
-export function seedOrder(size) {
-  let order = [1];
-  while (order.length < size) {
-    const n = order.length * 2;
-    const next = [];
-    for (const s of order) next.push(s, n + 1 - s);
-    order = next;
-  }
-  return order;
-}
 
 /**
  * ダブルエリミネーション。

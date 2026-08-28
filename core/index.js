@@ -1,5 +1,6 @@
 import { buildFullPlacement } from './formats/full-placement.js';
 import { buildDoubleElimination } from './formats/double-elimination.js';
+import { buildSingleElimination } from './formats/single-elimination.js';
 import { scheduleMatches } from './schedule.js';
 import { warningsFor } from './validate.js';
 import { getScoring } from './scoring.js';
@@ -7,7 +8,7 @@ import { getScoring } from './scoring.js';
 const BUILDERS = {
   'full-placement': buildFullPlacement,
   'double-elimination': buildDoubleElimination,
-  // single は3周目
+  'single-elimination': buildSingleElimination,
 };
 
 export function buildTournament(config) {
@@ -27,4 +28,4 @@ export function buildTournament(config) {
   return tournament;
 }
 
-export { buildFullPlacement, buildDoubleElimination, scheduleMatches };
+export { buildFullPlacement, buildDoubleElimination, buildSingleElimination, scheduleMatches };
