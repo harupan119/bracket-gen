@@ -1,0 +1,10 @@
+{
+  "name": "bracket-gen",
+  "version": "0.1.0",
+  "description": "条件を与えるとトーナメント表をGoogle Sheetsとして自動生成する",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

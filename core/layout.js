@@ -1,0 +1,156 @@
+import { Grid, a1 } from './grid.js';
+
+// 実物 8team_volleyball_base.xlsx と同じ列構成
+export const COLUMNS = [
+  { col: 1, width: 7 },   // A: 試合番号
+  { col: 2, width: 20 },  // B: 左チーム / ブラケット第1列
+  { col: 3, width: 5 },   // C: vs / 連結線
+  { col: 4, width: 20 },  // D: 右チーム / ブラケット第2列
+  { col: 5, width: 5 },   // E: 連結線
+  { col: 6, width: 26 },  // F: 説明 / ブラケット第3列
+];
+
+/**
+ * ブラケット図の座標。
+ *   行 = base + 2^(j+1) * i + 2^j
+ *   列 = 2 + 2*j            （j = 0 が最初のエントラント列）
+ * 実物の B13/B15/B17/B19 → D14/D18 → F16 (base=12) がこの式に一致する。
+ */
+export function bracketCell(base, round, index) {
+  return {
+    row: base + 2 ** (round + 1) * index + 2 ** round,
+    col: 2 + 2 * round,
+  };
+}
+
+export function bracketHeight(entrants) {
+  return entrants * 2;
+}
+
+const refText = (t, ref) =>
+  ref.type === 'team'
+    ? `（${ref.label}チーム）`
+    : `${ref.matchLabel}の${ref.type === 'winner' ? '勝者' : '敗者'}`;
+
+/**
+ * トーナメント表タブのグリッドを組む。
+ *
+ * 構成は実物と同じ:
+ *   1. タイトル
+ *   2. 最終2ラウンドより前の各ラウンドを試合リストで
+ *   3. 終端グループ（4チームずつ）を標準ブラケット図で
+ *   4. 最終順位表
+ */
+export function layoutBracketSheet(tournament) {
+  const g = new Grid('トーナメント表');
+  for (const { col, width } of COLUMNS) g.setColumnWidth(col, width);
+
+  let row = 1;
+  g.set(row, 1, tournament.title || `トーナメント表（${tournament.teams}チーム・全${tournament.matches.length}試合）`, { bold: true, size: 14 });
+  row += 1;
+  g.set(row, 1, `全${tournament.matches.length}試合／各チーム${tournament.rounds}試合／1位〜${tournament.placements}位まで確定`);
+  row += 2;
+
+  const lastTwo = new Set([tournament.rounds - 1, tournament.rounds]);
+  const listRounds = [...new Set(tournament.matches.map((m) => m.roundNo))]
+    .filter((r) => !lastTwo.has(r))
+    .sort((a, b) => a - b);
+
+  for (const r of listRounds) {
+    const ms = tournament.matches.filter((m) => m.roundNo === r);
+    g.set(row, 1, `■ ${ms[0].roundName}（${ms[0].label}〜${ms[ms.length - 1].label}）${r === 1 ? '　※ここだけ抽選で決める' : ''}`, { bold: true });
+    row += 1;
+    g.set(row, 1, '試合').set(row, 2, '対戦カード').set(row, 6, '行き先');
+    row += 1;
+    for (const m of ms) {
+      g.set(row, 1, m.label);
+      g.set(row, 2, refText(tournament, m.left));
+      g.set(row, 3, 'vs');
+      g.set(row, 4, refText(tournament, m.right));
+      g.set(row, 6, destinationText(tournament, m));
+      row += 1;
+    }
+    row += 1;
+  }
+
+  // 終端グループ = 最終2ラウンドに入る4チームずつのまとまり
+  for (const group of terminalGroups(tournament)) {
+    g.set(row, 1, `■ ${group.title}`, { bold: true });
+    row += 1;
+    const base = row;
+    const semiLabels = group.semis.map((x) => x.label).join('・');
+    g.set(base, 2, '進出チーム')
+      .set(base, 4, `${group.semis[0].roundName} ${semiLabels} の勝者`)
+      .set(base, 6, `${group.final.roundName} ${group.final.label}`);
+    for (let i = 0; i < group.entrants.length; i++) {
+      const { row: r, col: c } = bracketCell(base, 0, i);
+      g.set(r, c, refText(tournament, group.entrants[i]));
+    }
+    for (let i = 0; i < group.semis.length; i++) {
+      const { row: r, col: c } = bracketCell(base, 1, i);
+      g.set(r, c, `${group.semis[i].label}の勝者`);
+    }
+    {
+      const { row: r, col: c } = bracketCell(base, 2, 0);
+      g.set(r, c, `★ ${group.final.decides.winner}位`);
+    }
+    row = base + bracketHeight(group.entrants.length);
+    // 下位決定戦は図にせずリスト1行で置く（実物と同じ）
+    g.set(row, 1, group.consolation.label);
+    g.set(row, 2, refText(tournament, group.consolation.left));
+    g.set(row, 3, 'vs');
+    g.set(row, 4, refText(tournament, group.consolation.right));
+    g.set(row, 6, `${group.consolation.roundName}（勝者＝${group.consolation.decides.winner}位／敗者＝${group.consolation.decides.loser}位）`);
+    row += 2;
+  }
+
+  g.set(row, 1, '■ 最終順位', { bold: true });
+  row += 1;
+  g.set(row, 1, '順位').set(row, 2, 'チーム名').set(row, 6, '決定方法');
+  row += 1;
+  const placements = tournament.matches
+    .filter((x) => x.decides)
+    .flatMap((m) => [
+      { rank: m.decides.winner, text: `${m.label} ${m.roundName}の勝者` },
+      { rank: m.decides.loser, text: `${m.label} ${m.roundName}の敗者` },
+    ])
+    .sort((a, b) => a.rank - b.rank);
+  for (const p of placements) {
+    g.set(row, 1, `${p.rank}位`);
+    g.set(row, 6, p.text);
+    row += 1;
+  }
+  return g;
+}
+
+function destinationText(tournament, m) {
+  const label = (id) => tournament.matches.find((x) => x.id === id).label;
+  const parts = [];
+  if (m.winnerTo) parts.push(`勝者→${label(m.winnerTo)}`);
+  if (m.loserTo) parts.push(`敗者→${label(m.loserTo)}`);
+  return parts.join('　／　');
+}
+
+/** 最終2ラウンドを構成する、4チームずつのまとまりを取り出す。 */
+export function terminalGroups(tournament) {
+  const semis = tournament.matches.filter(
+    (m) => m.roundNo === tournament.rounds - 1 && m.rankSpan === 4
+  );
+  const groups = [];
+  const seen = new Set();
+  for (const s of semis) {
+    if (seen.has(s.rankStart)) continue;
+    seen.add(s.rankStart);
+    const pair = semis.filter((x) => x.rankStart === s.rankStart);
+    const final = tournament.matches.find((m) => m.id === pair[0].winnerTo);
+    const consolation = tournament.matches.find((m) => m.id === pair[0].loserTo);
+    groups.push({
+      title: `${s.rankStart}〜${s.rankStart + 3}位 ブラケット${s.rankStart === 1 ? '（上山）' : ''}`,
+      entrants: pair.flatMap((p) => [p.left, p.right]),
+      semis: pair,
+      final,
+      consolation,
+    });
+  }
+  return groups.sort((a, b) => a.semis[0].rankStart - b.semis[0].rankStart);
+}
