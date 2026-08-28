@@ -89,7 +89,8 @@ test('最終順位表にチーム名を引く数式が全順位ぶん入る', ()
     for (const r of rankRows) {
       const cell = g.cells.get(`${r},2`);
       assert.ok(cell, `${n}チーム: ${r}行にチーム名セルが無い`);
-      assert.match(String(cell.value), /^=IF\('試合管理'!\$[EF]\$\d+="","",/, `${n}チーム: ${r}行`);
+      // 同一順位を決める試合が複数ある場合（決勝と決勝R）は、後のものを優先する連結式になる
+      assert.match(String(cell.value), /^=IF\('試合管理'!\$[EF]\$\d+<>"",/, `${n}チーム: ${r}行`);
     }
   }
 });

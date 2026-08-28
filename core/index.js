@@ -1,11 +1,13 @@
 import { buildFullPlacement } from './formats/full-placement.js';
+import { buildDoubleElimination } from './formats/double-elimination.js';
 import { scheduleMatches } from './schedule.js';
 import { warningsFor } from './validate.js';
 import { getScoring } from './scoring.js';
 
 const BUILDERS = {
   'full-placement': buildFullPlacement,
-  // single / double は2周目以降
+  'double-elimination': buildDoubleElimination,
+  // single は3周目
 };
 
 export function buildTournament(config) {
@@ -16,7 +18,7 @@ export function buildTournament(config) {
   }
   const scoring = config.scoring ?? 'win-loss';
   getScoring(scoring); // 未対応なら生成の入口で落とす
-  const tournament = build({ teams });
+  const tournament = build({ teams, ...(config.options ?? {}) });
   tournament.title = config.title ?? '';
   tournament.scoring = scoring;
   tournament.courts = courts;
@@ -25,4 +27,4 @@ export function buildTournament(config) {
   return tournament;
 }
 
-export { buildFullPlacement, scheduleMatches };
+export { buildFullPlacement, buildDoubleElimination, scheduleMatches };

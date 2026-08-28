@@ -64,8 +64,17 @@ export function layoutControlSheet(tournament) {
     };
     const won = sc.leftWins(`$D${r}`);
     g.set(r, 1, m.label);
-    g.set(r, 2, side(m.left));
-    g.set(r, 3, side(m.right));
+    if (m.playedIf) {
+      // 条件付きの試合（決勝リセット）。条件を満たすまで対戦カードを出さない。
+      const src = cellRefs.controlRow(matchIndex(tournament, m.playedIf.match));
+      const side2 = m.playedIf.side === 'left' ? 'B' : 'C';
+      const cond = `AND($E$${src}<>"",$E$${src}=$${side2}$${src})`;
+      g.set(r, 2, `=IF(${cond},$B$${src},"")`);
+      g.set(r, 3, `=IF(${cond},$C$${src},"")`);
+    } else {
+      g.set(r, 2, side(m.left));
+      g.set(r, 3, side(m.right));
+    }
     g.set(r, 4, `=${cellRefs.mobileInput(i)}`);
     g.set(r, 5, `=IF($D${r}="","",IF(${won},$B${r},$C${r}))`);
     g.set(r, 6, `=IF($D${r}="","",IF(${won},$C${r},$B${r}))`);

@@ -66,14 +66,22 @@ export function layoutBracketSheet(tournament) {
   g.set(row, 1, `全${tournament.matches.length}試合／各チーム${tournament.rounds}試合／1位〜${tournament.placements}位まで確定`);
   row += 2;
 
-  const lastTwo = new Set([tournament.rounds - 1, tournament.rounds]);
-  const listRounds = [...new Set(tournament.matches.map((m) => m.roundNo))]
-    .filter((r) => !lastTwo.has(r))
-    .sort((a, b) => a - b);
+  // 完全順位決定では最終2ラウンドをブラケット図にする。それ以外は試合リスト。
+  const groups = terminalGroups(tournament);
+  const inBracket = new Set(
+    groups.flatMap((g) => [...g.semis.map((s) => s.id), g.final.id, g.consolation.id])
+  );
+  // 勝者側と敗者側でラウンド番号が衝突するため、区切りには系統も含める
+  const keyOf = (m) => `${m.bracket ?? '-'}/${m.roundNo}`;
+  const listKeys = [];
+  for (const m of tournament.matches) {
+    if (inBracket.has(m.id)) continue;
+    if (!listKeys.includes(keyOf(m))) listKeys.push(keyOf(m));
+  }
 
-  for (const r of listRounds) {
-    const ms = tournament.matches.filter((m) => m.roundNo === r);
-    g.set(row, 1, `■ ${ms[0].roundName}（${ms[0].label}〜${ms[ms.length - 1].label}）${r === 1 ? '　※ここだけ抽選で決める' : ''}`, { bold: true });
+  for (const key of listKeys) {
+    const ms = tournament.matches.filter((m) => !inBracket.has(m.id) && keyOf(m) === key);
+    g.set(row, 1, `■ ${ms[0].roundName}（${ms[0].label}〜${ms[ms.length - 1].label}）${ms[0].roundNo === 1 && ms[0].bracket !== 'L' ? '　※ここだけ抽選で決める' : ''}`, { bold: true });
     row += 1;
     g.set(row, 1, '試合').set(row, 2, '対戦カード').set(row, 6, '行き先');
     row += 1;
@@ -89,7 +97,7 @@ export function layoutBracketSheet(tournament) {
   }
 
   // 終端グループ = 最終2ラウンドに入る4チームずつのまとまり
-  for (const group of terminalGroups(tournament)) {
+  for (const group of groups) {
     g.set(row, 1, `■ ${group.title}`, { bold: true });
     row += 1;
     const base = row;
@@ -131,14 +139,25 @@ export function layoutBracketSheet(tournament) {
   const placements = tournament.matches
     .filter((x) => x.decides)
     .flatMap((m) => [
-      { rank: m.decides.winner, text: `${m.label} ${m.roundName}の勝者`, cell: controlCell(tournament, m.id, 'winner'), matchId: m.id },
-      { rank: m.decides.loser, text: `${m.label} ${m.roundName}の敗者`, cell: controlCell(tournament, m.id, 'loser'), matchId: m.id },
+      m.decides.winner != null && { rank: m.decides.winner, text: `${m.label} ${m.roundName}の勝者`, cell: controlCell(tournament, m.id, 'winner'), matchId: m.id },
+      m.decides.loser != null && { rank: m.decides.loser, text: `${m.label} ${m.roundName}の敗者`, cell: controlCell(tournament, m.id, 'loser'), matchId: m.id },
     ])
-    .sort((a, b) => a.rank - b.rank);
+    .filter(Boolean);
+  const byRank = new Map();
   for (const p of placements) {
-    g.set(row, 1, `${p.rank}位`);
-    g.set(row, 2, `=IF(${p.cell}="","",${p.cell})`, p.rank === 1 ? { championOf: p.matchId } : {});
-    g.set(row, 6, p.text);
+    if (!byRank.has(p.rank)) byRank.set(p.rank, []);
+    byRank.get(p.rank).push(p);
+  }
+  for (const rank of [...byRank.keys()].sort((a, b) => a - b)) {
+    const cands = byRank.get(rank);
+    // 後の試合（決勝リセット）が決まっていればそちらを優先する
+    const formula = cands
+      .slice()
+      .reverse()
+      .reduceRight((acc, c) => `IF(${c.cell}<>"",${c.cell},${acc})`, '""');
+    g.set(row, 1, `${rank}位`);
+    g.set(row, 2, `=${formula}`, rank === 1 ? { championOf: cands.at(-1).matchId } : {});
+    g.set(row, 6, cands.map((c) => c.text).join(' ／ '));
     row += 1;
   }
   return g;
