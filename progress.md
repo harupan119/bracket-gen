@@ -151,3 +151,17 @@
   realm 違いで `deepEqual` が prototype 不一致になるため、JSON経由でこちら側へ写してから比較する。
 - README（継承リスク・3形式の制約・実適用でしか見つからない不具合3件を明記）と LICENSE(MIT) を作成。
 - `npm test`: 64件すべてPASS。
+- Advanced Sheets Service の継承を実測。元シートに加え、Drive API でコピーを作りZ1を事前にクリアしてから
+  ユーザーにメニュー実行してもらったところ、コピー側にも新しいタイムスタンプで `ADVANCED_OK` が入った。
+  **マニフェスト経由なら継承される。** Q14/Q30の配布方式が成立することを確認。
+- Phase 5本体を実装。`apps-script/main.gs`（メニュー・生成・sheetId の差し替え）と
+  `apps-script/dialog.html`（形式・チーム数・コート数・大会名・スコア方式・オプションの入力）。
+  生成は「いま開いているコピー」へ直接書き込む。作り直しに備えて、
+  既存タブの内容・条件付き書式・結合セルを明示的に消してから適用する。
+- ダイアログの選択肢は `BracketGen.SCORING` から動的に作る（二重管理を避けるため）。
+- Apps Script 側の検証テストを追加。構文検査、マニフェストのAdvanced Sheets Service宣言、
+  **main.gs が参照する `BracketGen.*` がバンドルに実在するか**、`remapSheetIds` の再帰的な差し替え、
+  ダイアログが送る options のキーが core の受け口と一致するか。
+- READMEのYAML例が `third_place`、実装が `thirdPlace` で食い違っていたため実装側に統一。
+  この種の事故を防ぐため、ダイアログのキーをテストで固定した。
+- `npm test`: 69件すべてPASS。

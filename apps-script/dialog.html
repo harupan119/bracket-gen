@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <style>
+      body { font-family: -apple-system, "Hiragino Sans", sans-serif; font-size: 13px; margin: 16px; color: #202124; }
+      label { display: block; margin-top: 14px; font-weight: 600; }
+      .hint { font-weight: 400; color: #5f6368; font-size: 12px; margin-top: 2px; }
+      select, input[type="number"], input[type="text"] { width: 100%; padding: 6px; margin-top: 4px; box-sizing: border-box; }
+      .row { display: flex; gap: 12px; }
+      .row > div { flex: 1; }
+      .opt { margin-top: 10px; font-weight: 400; }
+      button { margin-top: 20px; padding: 8px 20px; font-size: 13px; }
+      #status { margin-top: 14px; white-space: pre-wrap; }
+      .err { color: #c5221f; }
+      .warn { color: #b06000; }
+      .ok { color: #188038; }
+    </style>
+  </head>
+  <body>
+    <label>形式
+      <select id="format">
+        <option value="single-elimination">シングルエリミネーション</option>
+        <option value="double-elimination">ダブルエリミネーション</option>
+        <option value="full-placement">完全順位決定トーナメント</option>
+      </select>
+      <div class="hint" id="formatHint"></div>
+    </label>
+
+    <div class="row">
+      <div>
+        <label>チーム数
+          <input type="number" id="teams" value="8" min="4" max="20" />
+        </label>
+      </div>
+      <div>
+        <label>コート数
+          <input type="number" id="courts" value="2" min="1" max="10" />
+        </label>
+      </div>
+    </div>
+    <div class="hint">チーム名は A から自動で割り振ります。実名は生成後、進行表の記入欄に書いてください。</div>
+
+    <label>大会名
+      <input type="text" id="title" placeholder="2026年春 サークル団体戦" />
+    </label>
+
+    <label>結果の入れ方
+      <select id="scoring"></select>
+    </label>
+
+    <div class="opt"><label style="font-weight:400"><input type="checkbox" id="thirdPlace" checked /> 3位決定戦を行う（シングルのみ）</label></div>
+    <div class="opt"><label style="font-weight:400"><input type="checkbox" id="bracketReset" checked /> 決勝リセットを行う（ダブルのみ）</label></div>
+
+    <button id="go">作成する</button>
+    <div id="status"></div>
+
+    <script>
+      var OPTS = null;
+
+      google.script.run.withSuccessHandler(function (o) {
+        OPTS = o;
+        var sel = document.getElementById('scoring');
+        o.scoring.forEach(function (s) {
+          var el = document.createElement('option');
+          el.value = s.value;
+          el.textContent = s.label;
+          sel.appendChild(el);
+        });
+        document.getElementById('teams').min = o.minTeams;
+        document.getElementById('teams').max = o.maxTeams;
+        updateHint();
+      }).getOptions();
+
+      function updateHint() {
+        var f = document.getElementById('format').value;
+        var hint = document.getElementById('formatHint');
+        if (f === 'full-placement' && OPTS) {
+          hint.textContent =
+            'この形式は ' + OPTS.fullPlacementSizes.join(' / ') +
+            ' チームのみ。全員が同じ試合数を戦い、全順位が決まります。';
+        } else if (f === 'double-elimination') {
+          hint.textContent = '2敗で敗退。1〜3位が決まります。';
+        } else {
+          hint.textContent = '1敗で敗退。3位決定戦を入れると1〜4位が決まります。';
+        }
+      }
+      document.getElementById('format').addEventListener('change', updateHint);
+
+      document.getElementById('go').addEventListener('click', function () {
+        var btn = this;
+        var status = document.getElementById('status');
+        btn.disabled = true;
+        status.className = '';
+        status.textContent = '生成しています…';
+
+        var config = {
+          format: document.getElementById('format').value,
+          teams: parseInt(document.getElementById('teams').value, 10),
+          courts: parseInt(document.getElementById('courts').value, 10),
+          title: document.getElementById('title').value,
+          scoring: document.getElementById('scoring').value,
+          options: {
+            thirdPlace: document.getElementById('thirdPlace').checked,
+            bracketReset: document.getElementById('bracketReset').checked
+          }
+        };
+
+        google.script.run
+          .withSuccessHandler(function (r) {
+            status.className = 'ok';
+            var msg = '完成しました。全' + r.matches + '試合 ／ ' + r.slots + '枠 ／ 1〜' + r.placements + '位まで確定。';
+            if (r.warnings && r.warnings.length) {
+              status.className = 'warn';
+              msg += '\n\n' + r.warnings.join('\n');
+            }
+            status.textContent = msg;
+            btn.disabled = false;
+          })
+          .withFailureHandler(function (e) {
+            status.className = 'err';
+            status.textContent = e.message || String(e);
+            btn.disabled = false;
+          })
+          .generate(config);
+      });
+    </script>
+  </body>
+</html>
