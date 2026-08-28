@@ -107,3 +107,28 @@ test('コート2面なら6枠になり、同じ枠に依存関係が入らない
     ids.forEach((id) => placed.add(id));
   }
 });
+
+test('同じ枠に同じチームが2回出ない（同時刻に2試合はできない）', () => {
+  for (const teams of [4, 8, 16]) {
+    const t = buildFullPlacement({ teams });
+    for (const courts of [1, 2, 3, 4, 8]) {
+      const slots = scheduleMatches(t, { courts });
+      const byId = new Map(t.matches.map((m) => [m.id, m]));
+      // 全勝敗パターンのうち代表32通りで、枠ごとの出場チームに重複が無いことを見る
+      for (let k = 0; k < 32; k++) {
+        const bits = Math.floor(Math.random() * 2 ** t.matches.length);
+        const { winner, loser } = simulate(t, bits);
+        const teamOf = (ref) =>
+          ref.type === 'team' ? ref.index : (ref.type === 'winner' ? winner : loser).get(ref.match);
+        for (const slot of slots) {
+          const playing = slot.matches.flatMap((e) => {
+            const m = byId.get(e.matchId);
+            return [teamOf(m.left), teamOf(m.right)];
+          });
+          assert.equal(new Set(playing).size, playing.length,
+            `${teams}チーム/${courts}コート ${slot.label}: 同じチームが重複`);
+        }
+      }
+    }
+  }
+});

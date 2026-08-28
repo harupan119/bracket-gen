@@ -35,10 +35,12 @@ Google Sheets を生成する仕組みを作る。サークル内で代々引き
 - **Status:** complete
 
 ### Phase 3: Sheets生成ペイロード
+- [x] 4タブ（トーナメント表／進行表／スマホ用／試合管理[非表示]）のグリッドと数式を組む
+- [x] 結果入力をスマホ用の1列に一本化する
+- [x] 生成した数式から依存グラフを逆算してモデルと一致することを検証する
 - [ ] core が `spreadsheets.batchUpdate` のリクエスト配列を出す形にする
-- [ ] 4タブ（トーナメント表／進行表／スマホ用／試合管理[非表示]）を構成する
-- [ ] MCP経由で実際に適用し、生成されたSheetsを読み戻して検証する
-- **Status:** not started
+- [ ] MCP経由で実際に適用し、生成されたSheetsを読み戻して検証する（★google-multi MCP の再接続が必要）
+- **Status:** in progress
 
 ### Phase 4: 条件付き書式と自動進行
 - [ ] 試合管理タブの依存関係数式を生成する
@@ -75,3 +77,4 @@ Google Sheets を生成する仕組みを作る。サークル内で代々引き
 | `npm test` が `Cannot find module '.../test'` | 1 | Node 26 は `--test test/` をモジュールパスと解釈する。`node --test test/*.test.js` へ変更 |
 | 最終順位が 7,8,5,6,3,4,1,2 の順で出た | 1 | 試合順のまま並べていた。順位でソートしてから書き出すよう修正 |
 | ブラケットが下位帯（5〜8位）から並んだ | 1 | `terminalGroups` を `rankStart` 昇順にソート |
+| 未対応の `scoring` が生成の入口を素通りし、レイアウト生成まで遅れて落ちた | 1 | `buildTournament` で `getScoring` を呼び、入口で検証する |

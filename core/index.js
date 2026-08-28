@@ -1,6 +1,7 @@
 import { buildFullPlacement } from './formats/full-placement.js';
 import { scheduleMatches } from './schedule.js';
 import { warningsFor } from './validate.js';
+import { getScoring } from './scoring.js';
 
 const BUILDERS = {
   'full-placement': buildFullPlacement,
@@ -13,9 +14,11 @@ export function buildTournament(config) {
   if (!build) {
     throw new Error(`未対応の形式です: ${format}（対応: ${Object.keys(BUILDERS).join(' / ')}）`);
   }
+  const scoring = config.scoring ?? 'win-loss';
+  getScoring(scoring); // 未対応なら生成の入口で落とす
   const tournament = build({ teams });
   tournament.title = config.title ?? '';
-  tournament.scoring = config.scoring ?? 'win-loss';
+  tournament.scoring = scoring;
   tournament.courts = courts;
   tournament.slots = scheduleMatches(tournament, { courts });
   tournament.warnings = warningsFor({ format, teams, courts });
