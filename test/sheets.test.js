@@ -7,20 +7,45 @@ import { getScoring, SCORING } from '../core/scoring.js';
 const make = (opts = {}) =>
   buildTournament({ format: 'full-placement', teams: 8, courts: 2, title: 'T', scoring: 'sets-of-3', ...opts });
 
-test('生成した数式から依存グラフを逆算するとモデルと一致する', () => {
-  for (const teams of [4, 8, 16]) {
-    const t = make({ teams });
+const CASES = [
+  { format: 'full-placement', sizes: [4, 8, 16] },
+  { format: 'double-elimination', sizes: [4, 8, 10, 16] },
+  { format: 'single-elimination', sizes: [4, 8, 10, 16] },
+];
+
+test('条件付き試合の対戦カードがモデルの左右（勝者E列／敗者F列）と一致する', () => {
+  // 元試合の B/C（当初の左右）を出すと、同じ "2-1" がモデルと逆の勝者を指す。
+  for (const teams of [4, 8, 10, 16]) {
+    const t = buildTournament({ format: 'double-elimination', teams, courts: 2, scoring: 'sets-of-3' });
+    const g = layoutControlSheet(t);
+    const idx = t.matches.findIndex((m) => m.playedIf);
+    if (idx < 0) continue;
+    const m = t.matches[idx];
+    const r = cellRefs.controlRow(idx);
+    const src = cellRefs.controlRow(t.matches.findIndex((x) => x.id === m.playedIf.match));
+    assert.equal(m.left.type, 'winner');
+    assert.equal(m.right.type, 'loser');
+    assert.match(g.cells.get(`${r},2`).value, new RegExp(`,\\$E\\$${src},""\\)$`), `${teams}チーム: 左`);
+    assert.match(g.cells.get(`${r},3`).value, new RegExp(`,\\$F\\$${src},""\\)$`), `${teams}チーム: 右`);
+  }
+});
+
+test('生成した数式から依存グラフを逆算するとモデルと一致する（3形式）', () => {
+  for (const { format, sizes } of CASES) {
+  for (const teams of sizes) {
+    const t = buildTournament({ format, teams, courts: 2, scoring: 'sets-of-3' });
     const g = layoutControlSheet(t);
     const rowToId = new Map(t.matches.map((m, i) => [cellRefs.controlRow(i), m.id]));
 
     t.matches.forEach((m, i) => {
+      if (m.playedIf) return; // 条件付き試合は専用テストで検査する
       const r = cellRefs.controlRow(i);
       for (const [col, ref] of [[2, m.left], [3, m.right]]) {
         const f = g.cells.get(`${r},${col}`).value;
         if (ref.type === 'team') {
           // チーム名記入欄を直接参照している
           assert.ok(f.includes(cellRefs.teamName(ref.index)), `${teams}人 ${m.label}: チーム参照`);
-          assert.ok(!/\$[EF]\$\d+/.test(f), `${teams}人 ${m.label}: 余計な試合参照が混ざっている`);
+          assert.ok(!/\$[EF]\$\d+/.test(f), `${format} ${teams}人 ${m.label}: 余計な試合参照が混ざっている`);
         } else {
           const hit = f.match(/\$([EF])\$(\d+)/);
           assert.ok(hit, `${teams}人 ${m.label}: 試合参照が無い`);
@@ -30,6 +55,7 @@ test('生成した数式から依存グラフを逆算するとモデルと一�
         }
       }
     });
+  }
   }
 });
 

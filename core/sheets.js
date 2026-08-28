@@ -69,8 +69,10 @@ export function layoutControlSheet(tournament) {
       const src = cellRefs.controlRow(matchIndex(tournament, m.playedIf.match));
       const side2 = m.playedIf.side === 'left' ? 'B' : 'C';
       const cond = `AND($E$${src}<>"",$E$${src}=$${side2}$${src})`;
-      g.set(r, 2, `=IF(${cond},$B$${src},"")`);
-      g.set(r, 3, `=IF(${cond},$C$${src},"")`);
+      // 左右はモデルの参照どおり（左＝元試合の勝者 E列 / 右＝敗者 F列）に並べる。
+      // ここを元試合の B/C（当初の左右）にすると、同じ "2-1" がモデルと逆の勝者を指す。
+      g.set(r, 2, `=IF(${cond},$E$${src},"")`);
+      g.set(r, 3, `=IF(${cond},$F$${src},"")`);
     } else {
       g.set(r, 2, side(m.left));
       g.set(r, 3, side(m.right));
