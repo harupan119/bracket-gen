@@ -50,11 +50,12 @@ Google Sheets を生成する仕組みを作る。サークル内で代々引き
 - **Status:** complete
 
 ### Phase 5: Apps Script化と配布
-- [ ] esbuild で core を `apps-script/core.bundle.gs` へバンドルする
-- [ ] Advanced Sheets Service がシートのコピーで引き継がれるか検証する（★継承の可否に直結）
+- [x] esbuild で core を `apps-script/core.bundle.gs` へバンドルする
+- [x] バンドルが素のグローバルスコープで動くことをテストで固定する
+- [ ] Advanced Sheets Service がシートのコピーで引き継がれるか検証する（★継承の可否に直結／ユーザーのブラウザ操作待ち）
 - [ ] メニューと条件入力ダイアログを作る
 - [ ] テンプレSheetsを「リンクを知っている全員がコピー可」で共有する
-- **Status:** not started
+- **Status:** in progress
 
 ### Phase 6: ダブルエリミネーション（10チーム）
 - [x] 標準シードブラケット（勝者側）と小/大ラウンド交互の敗者側を実装する
@@ -71,7 +72,7 @@ Google Sheets を生成する仕組みを作る。サークル内で代々引き
 - **Status:** complete
 
 ### Phase 8: 公開
-- [ ] README（継承リスクの明記を含む）とLICENSE(MIT)を書く
+- [x] README（継承リスクの明記を含む）とLICENSE(MIT)を書く
 - [ ] スプレッドシートID・認証情報が含まれないことを確認する
 - [ ] `gh repo create bracket-gen --public --source=.`
 - **Status:** not started
@@ -92,3 +93,5 @@ Google Sheets を生成する仕組みを作る。サークル内で代々引き
 | 並行実行された別エージェントが同リポジトリに重複実装 `core/formats/double.js` / `test/double.test.js` を作成 | 1 | 未追跡のまま温存。`core/index.js` に足された未追跡ファイルへのimportだけ、cloneが壊れるため除去 |
 | 決勝Rの勝者がモデルとシートで食い違った（モデルI／シートC） | 1 | シート側が元試合の `$B`/`$C`（当初の左右）を出していた。モデルどおり `$E`（勝者）/`$F`（敗者）へ修正 |
 | 上記を既存の依存グラフ逆算テストが見逃した | 1 | 条件式内の `$E$19` を先に拾い、実際に返す値を検査していなかった。条件付き試合を専用テストに分離し、返り値の末尾を検査する形へ |
+| esbuild のバナー文字列に入れたバックティックを zsh がコマンド置換として実行し、`npm run build` が再帰的に走ってバナーに npm の出力が埋め込まれた | 1 | バナーからバックティックを除去 |
+| バンドルのテストが realm 違いで `deepEqual` に失敗 | 1 | vm コンテキストの値は prototype が別。JSON経由でこちら側へ写してから比較する |

@@ -137,3 +137,17 @@
   決勝Rを優先する連結式が実シート上で機能している。
 - `node --test`（フォークの重複テストを除く7ファイル）: 59件すべてPASS。
 - Phase 6完了。
+- 重複ファイルの削除承認を取得し `rm core/formats/double.js test/double.test.js` を実行。作業ツリーがクリーンになり `npm test` が59件全通過。
+- Phase 5の第一歩として、配布方式の生死を分ける一点だけを切り出したプローブを作成。
+  `apps-script/probe.gs` と `apps-script/appsscript.json`（Advanced Sheets Service をマニフェストで有効化）。
+  結果はセルZ1に `ADVANCED_OK` / `ADVANCED_NG` として残るので、APIで読めば判定できる。
+  ユーザーのブラウザ操作待ち。
+- esbuild で core を `apps-script/core.bundle.gs`（43KB）へバンドル。
+  初回はバナー文字列のバックティックを zsh がコマンド置換として実行し、
+  `npm run build` が再帰的に走ってバナーに npm の出力が埋め込まれた。バックティックを除去して解決。
+- バンドルを Apps Script と同条件（bare な vm コンテキスト）で読み込むテストを追加。
+  import/export の残存なし、`BracketGen` グローバルの定義、3形式の試合数とラベルがソースと一致、
+  バリデーションの動作、`core/` の変更への追随を検査する。
+  realm 違いで `deepEqual` が prototype 不一致になるため、JSON経由でこちら側へ写してから比較する。
+- README（継承リスク・3形式の制約・実適用でしか見つからない不具合3件を明記）と LICENSE(MIT) を作成。
+- `npm test`: 64件すべてPASS。

@@ -5,6 +5,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "build": "npx --yes esbuild@0.25.0 core/bundle-entry.js --bundle --format=iife --global-name=BracketGen --target=es2019 --banner:js='// 自動生成。core/ を直して npm run build で作り直す。手で編集しない。' --outfile=apps-script/core.bundle.gs"
   }
 }
