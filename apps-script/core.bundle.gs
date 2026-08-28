@@ -651,48 +651,52 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
   }
   function layoutMobileSheet(tournament) {
     const g = new Grid(TABS.mobile);
+    g.frozenRows = MOBILE_ROW - 1;
     const sc = getScoring(tournament.scoring);
     g.setColumnWidth(1, 8).setColumnWidth(2, 22).setColumnWidth(3, 12).setColumnWidth(4, 14);
-    g.set(1, 1, tournament.title || "\u30B9\u30DE\u30DB\u7528 \u7D50\u679C\u5165\u529B", { bold: true, size: 14 });
-    g.set(2, 1, `\u9EC4\u8272\u3044\u30BB\u30EB\u306B\u7D50\u679C\uFF08${sc.options.join(" / ")}\uFF09\u3092\u5165\u308C\u308B\u3068\u3001\u5168\u30BF\u30D6\u306E\u52DD\u8005\u30FB\u6B21\u6226\u30FB\u8272\u304C\u81EA\u52D5\u3067\u66F4\u65B0\u3055\u308C\u307E\u3059\u3002`);
-    ["\u8A66\u5408", "\u5BFE\u6226", "\u7D50\u679C", "\u52DD\u8005"].forEach((h, i) => g.set(4, i + 1, h, { bold: true }));
+    g.set(1, 1, tournament.title || "\u30B9\u30DE\u30DB\u7528 \u7D50\u679C\u5165\u529B", { role: "title" });
+    g.set(2, 1, `\u9EC4\u8272\u3044\u30BB\u30EB\u306B\u7D50\u679C\uFF08${sc.options.join(" / ")}\uFF09\u3092\u5165\u308C\u308B\u3068\u3001\u5168\u30BF\u30D6\u306E\u52DD\u8005\u30FB\u6B21\u6226\u30FB\u8272\u304C\u81EA\u52D5\u3067\u66F4\u65B0\u3055\u308C\u307E\u3059\u3002`, { role: "note" });
+    ["\u8A66\u5408", "\u5BFE\u6226", "\u7D50\u679C", "\u52DD\u8005"].forEach((h, i) => g.set(4, i + 1, h, { role: "tableHeader" }));
     tournament.matches.forEach((m, i) => {
       const r = MOBILE_ROW + i;
       const c = cellRefs.controlRow(i);
-      g.set(r, 1, m.label);
-      g.set(r, 2, `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`);
-      g.set(r, 3, "", { input: true, validation: sc.options });
-      g.set(r, 4, `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`);
+      g.set(r, 1, m.label, { role: "label" });
+      g.set(r, 2, `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`, { role: "slot" });
+      g.set(r, 3, "", { role: "input", input: true, validation: sc.options });
+      g.set(r, 4, `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`, { role: "slot" });
     });
     return g;
   }
   function layoutProgressSheet(tournament) {
     const g = new Grid(TABS.progress);
+    g.frozenRows = 2;
     g.setColumnWidth(1, 8).setColumnWidth(2, 20).setColumnWidth(3, 8).setColumnWidth(4, 26).setColumnWidth(5, 12).setColumnWidth(6, 16);
-    g.set(1, 1, tournament.title || `\u9032\u884C\u8868\uFF08${tournament.teams}\u30C1\u30FC\u30E0\u30FB\u5168${tournament.matches.length}\u8A66\u5408\uFF09`, { bold: true, size: 14 });
-    g.set(2, 1, `\u30B3\u30FC\u30C8${tournament.courts}\u9762\uFF0F\u5168${tournament.slots.length}\u67A0\uFF0F\u5168${tournament.matches.length}\u8A66\u5408\uFF0F${eliminationRule(tournament)}`);
-    g.set(4, 1, "\u25A0 \u51FA\u5834\u30C1\u30FC\u30E0\uFF08\u3053\u3053\u306B\u8A18\u5165\u3059\u308B\u3068\u5168\u30BF\u30D6\u306E\u5BFE\u6226\u30AB\u30FC\u30C9\u306B\u53CD\u6620\u3055\u308C\u307E\u3059\uFF09", { bold: true });
-    g.set(5, 1, "\u8A18\u53F7", { bold: true });
-    g.set(5, 2, "\u30C1\u30FC\u30E0\u540D", { bold: true });
+    g.set(1, 1, tournament.title || `\u9032\u884C\u8868\uFF08${tournament.teams}\u30C1\u30FC\u30E0\u30FB\u5168${tournament.matches.length}\u8A66\u5408\uFF09`, { role: "title" });
+    g.set(2, 1, `\u30B3\u30FC\u30C8${tournament.courts}\u9762\uFF0F\u5168${tournament.slots.length}\u67A0\uFF0F\u5168${tournament.matches.length}\u8A66\u5408\uFF0F${eliminationRule(tournament)}`, { role: "note" });
+    g.set(4, 1, "\u25A0 \u51FA\u5834\u30C1\u30FC\u30E0\uFF08\u3053\u3053\u306B\u8A18\u5165\u3059\u308B\u3068\u5168\u30BF\u30D6\u306E\u5BFE\u6226\u30AB\u30FC\u30C9\u306B\u53CD\u6620\u3055\u308C\u307E\u3059\uFF09", { role: "section" });
+    g.merge(4, 1, 4, 6);
+    g.set(5, 1, "\u8A18\u53F7", { role: "tableHeader" });
+    g.set(5, 2, "\u30C1\u30FC\u30E0\u540D", { role: "tableHeader" });
     tournament.teamLabels.forEach((label, i) => {
-      g.set(TEAM_INPUT_ROW + i, 1, label);
-      g.set(TEAM_INPUT_ROW + i, 2, "", { input: true });
+      g.set(TEAM_INPUT_ROW + i, 1, label, { role: "label" });
+      g.set(TEAM_INPUT_ROW + i, 2, "", { role: "input", input: true });
     });
     let row = TEAM_INPUT_ROW + tournament.teams + 1;
-    g.set(row, 1, "\u25A0 \u9032\u884C\u9806\uFF08\u67A0\u306E\u4E2D\u306E\u8A66\u5408\u306F\u540C\u6642\u306B\u9032\u884C\u3002\u67A0\u304C\u7D42\u308F\u3063\u305F\u3089\u6B21\u306E\u67A0\u3078\uFF09", { bold: true });
+    g.set(row, 1, "\u25A0 \u9032\u884C\u9806\uFF08\u67A0\u306E\u4E2D\u306E\u8A66\u5408\u306F\u540C\u6642\u306B\u9032\u884C\u3002\u67A0\u304C\u7D42\u308F\u3063\u305F\u3089\u6B21\u306E\u67A0\u3078\uFF09", { role: "section" });
+    g.merge(row, 1, row, 6);
     row += 1;
-    ["\u67A0", "\u30B3\u30FC\u30C8", "\u8A66\u5408", "\u5BFE\u6226\u30AB\u30FC\u30C9", "\u7D50\u679C", "\u52DD\u8005"].forEach((h, i) => g.set(row, i + 1, h, { bold: true }));
+    ["\u67A0", "\u30B3\u30FC\u30C8", "\u8A66\u5408", "\u5BFE\u6226\u30AB\u30FC\u30C9", "\u7D50\u679C", "\u52DD\u8005"].forEach((h, i) => g.set(row, i + 1, h, { role: "tableHeader" }));
     row += 1;
     for (const slot of tournament.slots) {
       for (const [n, entry] of slot.matches.entries()) {
         const i = matchIndex(tournament, entry.matchId);
         const c = cellRefs.controlRow(i);
-        if (n === 0) g.set(row, 1, slot.label);
-        g.set(row, 2, `\u30B3\u30FC\u30C8${entry.court}`);
-        g.set(row, 3, entry.matchLabel);
-        g.set(row, 4, `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`);
-        g.set(row, 5, `=IF('${TABS.control}'!$D$${c}="","",'${TABS.control}'!$D$${c})`);
-        g.set(row, 6, `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`);
+        g.set(row, 1, n === 0 ? slot.label : "", { role: "label" });
+        g.set(row, 2, `\u30B3\u30FC\u30C8${entry.court}`, { role: "body" });
+        g.set(row, 3, entry.matchLabel, { role: "label" });
+        g.set(row, 4, `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`, { role: "slot" });
+        g.set(row, 5, `=IF('${TABS.control}'!$D$${c}="","",'${TABS.control}'!$D$${c})`, { role: "body" });
+        g.set(row, 6, `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`, { role: "slot" });
         row += 1;
       }
     }
@@ -746,13 +750,13 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       g.set(helperRow(i), hc.winner, `=${controlCell(tournament, m.id, "winner")}`, { helper: true });
       g.set(helperRow(i), hc.loser, `=${controlCell(tournament, m.id, "loser")}`, { helper: true });
     });
-    for (let c = 2; c <= lastBracketCol(tournament); c++) {
-      g.setColumnWidth(c, c % 2 === 0 ? 18 : 4);
+    for (let c = 7; c <= lastBracketCol(tournament); c++) {
+      g.setColumnWidth(c, c % 2 === 0 ? 20 : 5);
     }
     let row = 1;
-    g.set(row, 1, tournament.title || `\u30C8\u30FC\u30CA\u30E1\u30F3\u30C8\u8868\uFF08${tournament.teams}\u30C1\u30FC\u30E0\u30FB\u5168${tournament.matches.length}\u8A66\u5408\uFF09`, { bold: true, size: 14 });
+    g.set(row, 1, tournament.title || `\u30C8\u30FC\u30CA\u30E1\u30F3\u30C8\u8868\uFF08${tournament.teams}\u30C1\u30FC\u30E0\u30FB\u5168${tournament.matches.length}\u8A66\u5408\uFF09`, { role: "title" });
     row += 1;
-    g.set(row, 1, subtitle(tournament));
+    g.set(row, 1, subtitle(tournament), { role: "note" });
     row += 2;
     const inBracket = /* @__PURE__ */ new Set();
     if (tournament.tree) {
@@ -775,29 +779,36 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       const ms = tournament.matches.filter((m) => !inBracket.has(m.id) && keyOf(m) === key);
       const span = ms.length > 1 ? `\uFF08${ms[0].label}\u301C${ms[ms.length - 1].label}\uFF09` : "";
       const note = ms[0].roundNo === 1 && ms[0].bracket !== "L" && !tournament.tree ? "\u3000\u203B\u3053\u3053\u3060\u3051\u62BD\u9078\u3067\u6C7A\u3081\u308B" : "";
-      g.set(row, 1, `\u25A0 ${ms[0].roundName}${span}${note}`, { bold: true });
+      g.set(row, 1, `\u25A0 ${ms[0].roundName}${span}${note}`, { role: "section" });
+      g.merge(row, 1, row, 6);
       row += 1;
-      g.set(row, 1, "\u8A66\u5408").set(row, 2, "\u5BFE\u6226\u30AB\u30FC\u30C9").set(row, 6, "\u884C\u304D\u5148");
+      for (const c of [1, 2, 3, 4, 5, 6]) g.set(row, c, "", { role: "tableHeader" });
+      g.cells.get(`${row},1`).value = "\u8A66\u5408";
+      g.cells.get(`${row},2`).value = "\u5BFE\u6226\u30AB\u30FC\u30C9";
+      g.cells.get(`${row},6`).value = "\u884C\u304D\u5148";
       row += 1;
       for (const m of ms) {
-        g.set(row, 1, m.label);
-        g.set(row, 2, liveRefFormula(tournament, m.left), { winnerOf: m.id });
-        g.set(row, 3, "vs");
-        g.set(row, 4, liveRefFormula(tournament, m.right), { winnerOf: m.id });
-        g.set(row, 6, destinationText(tournament, m));
+        g.set(row, 1, m.label, { role: "label" });
+        g.set(row, 2, liveRefFormula(tournament, m.left), { role: "slot", winnerOf: m.id });
+        g.set(row, 3, "vs", { role: "body" });
+        g.set(row, 4, liveRefFormula(tournament, m.right), { role: "slot", winnerOf: m.id });
+        g.set(row, 5, "", { role: "body" });
+        g.set(row, 6, destinationText(tournament, m), { role: "note" });
         row += 1;
       }
       row += 1;
     }
     for (const group of groups) {
-      g.set(row, 1, `\u25A0 ${group.title}`, { bold: true });
+      g.set(row, 1, `\u25A0 ${group.title}`, { role: "section" });
+      g.merge(row, 1, row, 6);
       row += 1;
       const base = row;
       const semiLabels = group.semis.map((x) => x.label).join("\u30FB");
-      g.set(base, 2, "\u9032\u51FA\u30C1\u30FC\u30E0").set(base, 4, `${group.semis[0].roundName} ${semiLabels} \u306E\u52DD\u8005`).set(base, 6, `${group.final.roundName} ${group.final.label}`);
+      g.set(base, 2, "\u9032\u51FA\u30C1\u30FC\u30E0", { role: "tableHeader" }).set(base, 3, "", { role: "tableHeader" }).set(base, 4, `${group.semis[0].roundName} ${semiLabels} \u306E\u52DD\u8005`, { role: "tableHeader" }).set(base, 5, "", { role: "tableHeader" }).set(base, 6, `${group.final.roundName} ${group.final.label}`, { role: "tableHeader" });
       for (let i = 0; i < group.entrants.length; i++) {
         const { row: r, col: c } = bracketCell(base, 0, i);
         g.set(r, c, liveRefFormula(tournament, group.entrants[i]), {
+          role: "team",
           winnerOf: group.semis[Math.floor(i / 2)].id
         });
       }
@@ -810,19 +821,24 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       drawBranches(g, base, [group.entrants.length, group.semis.length, 1]);
       {
         const { row: r, col: c } = bracketCell(base, 2, 0);
-        g.set(r, c, `=IF(${controlCell(tournament, group.final.id, "winner")}="","\u2605 ${group.final.decides.winner}\u4F4D","\u2605 "&${controlCell(tournament, group.final.id, "winner")})`, { championOf: group.final.id });
+        g.set(r, c, `=IF(${controlCell(tournament, group.final.id, "winner")}="","\u2605 ${group.final.decides.winner}\u4F4D","\u2605 "&${controlCell(tournament, group.final.id, "winner")})`, { role: "slot", championOf: group.final.id });
       }
       row = base + bracketHeight(group.entrants.length);
-      g.set(row, 1, group.consolation.label);
-      g.set(row, 2, liveRefFormula(tournament, group.consolation.left), { winnerOf: group.consolation.id });
-      g.set(row, 3, "vs");
-      g.set(row, 4, liveRefFormula(tournament, group.consolation.right), { winnerOf: group.consolation.id });
-      g.set(row, 6, `${group.consolation.roundName}\uFF08\u52DD\u8005\uFF1D${group.consolation.decides.winner}\u4F4D\uFF0F\u6557\u8005\uFF1D${group.consolation.decides.loser}\u4F4D\uFF09`);
+      g.set(row, 1, group.consolation.label, { role: "label" });
+      g.set(row, 2, liveRefFormula(tournament, group.consolation.left), { role: "slot", winnerOf: group.consolation.id });
+      g.set(row, 3, "vs", { role: "body" });
+      g.set(row, 4, liveRefFormula(tournament, group.consolation.right), { role: "slot", winnerOf: group.consolation.id });
+      g.set(row, 5, "", { role: "body" });
+      g.set(row, 6, `${group.consolation.roundName}\uFF08\u52DD\u8005\uFF1D${group.consolation.decides.winner}\u4F4D\uFF0F\u6557\u8005\uFF1D${group.consolation.decides.loser}\u4F4D\uFF09`, { role: "note" });
       row += 2;
     }
-    g.set(row, 1, "\u25A0 \u6700\u7D42\u9806\u4F4D", { bold: true });
+    g.set(row, 1, "\u25A0 \u6700\u7D42\u9806\u4F4D", { role: "section" });
+    g.merge(row, 1, row, 6);
     row += 1;
-    g.set(row, 1, "\u9806\u4F4D").set(row, 2, "\u30C1\u30FC\u30E0\u540D").set(row, 6, "\u6C7A\u5B9A\u65B9\u6CD5");
+    for (const c of [1, 2, 3, 4, 5, 6]) g.set(row, c, "", { role: "tableHeader" });
+    g.cells.get(`${row},1`).value = "\u9806\u4F4D";
+    g.cells.get(`${row},2`).value = "\u30C1\u30FC\u30E0\u540D";
+    g.cells.get(`${row},6`).value = "\u6C7A\u5B9A\u65B9\u6CD5";
     row += 1;
     const placements = tournament.matches.filter((x) => x.decides).flatMap((m) => [
       m.decides.winner != null && { rank: m.decides.winner, text: `${m.label} ${m.roundName}\u306E\u52DD\u8005`, cell: controlCell(tournament, m.id, "winner"), matchId: m.id },
@@ -836,9 +852,10 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     for (const rank of [...byRank.keys()].sort((a, b) => a - b)) {
       const cands = byRank.get(rank);
       const formula = cands.slice().reverse().reduceRight((acc, c) => `IF(${c.cell}<>"",${c.cell},${acc})`, '""');
-      g.set(row, 1, `${rank}\u4F4D`);
-      g.set(row, 2, `=${formula}`, rank === 1 ? { championOf: cands.at(-1).matchId } : {});
-      g.set(row, 6, cands.map((c) => c.text).join(" \uFF0F "));
+      g.set(row, 1, `${rank}\u4F4D`, { role: "label" });
+      g.set(row, 2, `=${formula}`, rank === 1 ? { role: "slot", championOf: cands.at(-1).matchId } : { role: "slot" });
+      for (const c of [3, 4, 5]) g.set(row, c, "", { role: "body" });
+      g.set(row, 6, cands.map((c) => c.text).join(" \uFF0F "), { role: "note" });
       row += 1;
     }
     return g;
@@ -905,7 +922,8 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     var _a;
     const { levels } = tournament.tree;
     let row = startRow;
-    g.set(row, 1, `\u25A0 ${(_a = tournament.tree.title) != null ? _a : "\u672C\u6226"}`, { bold: true });
+    g.set(row, 1, `\u25A0 ${(_a = tournament.tree.title) != null ? _a : "\u672C\u6226"}`, { role: "section" });
+    g.merge(row, 1, row, 6);
     row += 1;
     const base = row;
     drawBranches(
@@ -919,7 +937,8 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         if (!ref) return;
         const { row: r, col: c } = bracketCell(base, j, i);
         const parent = levels[j + 1] ? levels[j + 1][Math.floor(i / 2)] : null;
-        const style = parent && parent.type === "winner" ? { winnerOf: parent.match } : j === levels.length - 1 && ref.type === "winner" ? { championOf: ref.match } : {};
+        const base2 = { role: j === 0 ? "team" : "slot" };
+        const style = parent && parent.type === "winner" ? { ...base2, winnerOf: parent.match } : j === levels.length - 1 && ref.type === "winner" ? { ...base2, championOf: ref.match } : base2;
         g.set(r, c, liveRefFormula(tournament, ref), style);
         if (ref.type === "winner") inBracket.add(ref.match);
       });
@@ -948,6 +967,44 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       blue: parseInt(h.slice(4, 6), 16) / 255
     };
   }
+
+  // core/theme.js
+  var THEME = {
+    font: "Hiragino Sans",
+    colors: {
+      grid: "#9CA3AF",
+      // 細い格子罫線
+      accent: "#1F4E79",
+      // 見出しの文字・強調罫線
+      headerFill: "#4472C4",
+      // 表ヘッダの帯
+      headerText: "#FFFFFF",
+      sectionFill: "#DCE6F1",
+      // セクション見出しの地
+      teamFill: "#DEEBF7",
+      // チーム名セルの地
+      inputFill: "#FFF2CC",
+      // 入力欄（黄）
+      doneFill: "#E2F0D9",
+      // 入力済み（緑）
+      muted: "#6B7280",
+      // 補足テキスト
+      text: "#000000",
+      white: "#FFFFFF"
+    },
+    sizes: { title: 14, section: 12, body: 11, header: 10, note: 9 }
+  };
+  var ROLES = {
+    title: { size: "title", bold: true },
+    note: { size: "note", color: "muted" },
+    section: { size: "section", bold: true, color: "accent", fill: "sectionFill" },
+    tableHeader: { size: "header", bold: true, color: "white", fill: "headerFill", box: true, align: "CENTER" },
+    team: { size: "body", bold: true, fill: "teamFill", box: true, align: "CENTER" },
+    slot: { size: "body", box: true, align: "CENTER" },
+    input: { size: "body", bold: true, fill: "inputFill", box: true, align: "CENTER" },
+    body: { size: "body", box: true },
+    label: { size: "body", bold: true, box: true, align: "CENTER" }
+  };
 
   // core/formatting.js
   var WINNER_FORMAT = {
@@ -1048,6 +1105,14 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
           }
         });
       }
+      if (grid.frozenRows) {
+        requests.push({
+          updateSheetProperties: {
+            properties: { sheetId, gridProperties: { frozenRowCount: grid.frozenRows } },
+            fields: "gridProperties.frozenRowCount"
+          }
+        });
+      }
       for (const b of grid.borders) {
         requests.push({
           updateBorders: {
@@ -1109,24 +1174,37 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     };
   }
   function cellData(cell) {
-    var _a;
+    var _a, _b;
     if (!cell) return {};
     const style = (_a = cell.style) != null ? _a : {};
-    const out = { userEnteredFormat: {} };
+    const fmt = {};
     const v = cell.value;
-    if (v !== "" && v != null) {
-      out.userEnteredValue = String(v).startsWith("=") ? { formulaValue: String(v) } : { stringValue: String(v) };
+    const value = v !== "" && v != null ? String(v).startsWith("=") ? { formulaValue: String(v) } : { stringValue: String(v) } : null;
+    const role = (_b = ROLES[style.role]) != null ? _b : null;
+    const text = { fontFamily: THEME.font };
+    if (role) {
+      if (role.bold) text.bold = true;
+      if (role.size) text.fontSize = THEME.sizes[role.size];
+      if (role.color) text.foregroundColor = toRgb(THEME.colors[role.color]);
+      if (role.fill) fmt.backgroundColor = toRgb(THEME.colors[role.fill]);
+      if (role.align) fmt.horizontalAlignment = role.align;
+      if (role.box) fmt.borders = boxBorders();
     }
-    const textFormat = {};
-    if (style.bold) textFormat.bold = true;
-    if (style.size) textFormat.fontSize = style.size;
-    if (Object.keys(textFormat).length) out.userEnteredFormat.textFormat = textFormat;
+    if (style.bold) text.bold = true;
+    if (style.size) text.fontSize = style.size;
+    fmt.textFormat = text;
+    fmt.verticalAlignment = "MIDDLE";
     if (style.input) {
-      out.userEnteredFormat.backgroundColor = toRgb(COLORS.resultPending);
-      out.userEnteredFormat.numberFormat = { type: "TEXT" };
+      fmt.backgroundColor = toRgb(THEME.colors.inputFill);
+      fmt.numberFormat = { type: "TEXT" };
     }
-    if (!out.userEnteredValue && !Object.keys(out.userEnteredFormat).length) return {};
+    const out = { userEnteredFormat: fmt };
+    if (value) out.userEnteredValue = value;
     return out;
+  }
+  function boxBorders() {
+    const line = { style: "SOLID", color: toRgb(THEME.colors.grid) };
+    return { top: line, bottom: line, left: line, right: line };
   }
   function validationRequests(sheetId, grid) {
     var _a;

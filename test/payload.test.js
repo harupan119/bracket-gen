@@ -23,8 +23,11 @@ test('全リクエストが実在するシートIDを指す', () => {
     const ids = new Set(p.create.sheets.map((s) => s.properties.sheetId));
     for (const r of p.requests) {
       const body = r[Object.keys(r)[0]];
-      // range を1つ持つ形と、rule.ranges を複数持つ形（条件付き書式）の両方がある
-      const targets = body.range ? [body.range] : (body.rule?.ranges ?? []);
+      // リクエストによって sheetId の置き場所が違う:
+      //   range を1つ持つ形 / rule.ranges を複数持つ形（条件付き書式） / properties に持つ形（シート属性）
+      const targets = body.range
+        ? [body.range]
+        : body.rule?.ranges ?? (body.properties?.sheetId != null ? [body.properties] : []);
       assert.ok(targets.length > 0, `${teams}チーム: 範囲を持たないリクエスト ${Object.keys(r)[0]}`);
       for (const g of targets) {
         assert.ok(ids.has(g.sheetId), `${teams}チーム: 未知のsheetId ${g.sheetId}`);
@@ -39,7 +42,9 @@ test('書き込み範囲がシートの行数・列数に収まる', () => {
     const dims = new Map(p.create.sheets.map((s) => [s.properties.sheetId, s.properties.gridProperties]));
     for (const r of p.requests) {
       const body = r[Object.keys(r)[0]];
-      const targets = body.range ? [body.range] : (body.rule?.ranges ?? []);
+      const targets = body.range
+        ? [body.range]
+        : body.rule?.ranges ?? (body.properties?.sheetId != null ? [body.properties] : []);
       for (const g of targets) {
         const d = dims.get(g.sheetId);
         if (g.endRowIndex != null) assert.ok(g.endRowIndex <= d.rowCount, `${teams}チーム: 行あふれ`);
@@ -78,11 +83,18 @@ test('入力規則が全試合ぶん出て、選択肢がプリセットと一�
   }
 });
 
-test('入力セルに未入力色が付く', () => {
-  const p = buildSpreadsheetPayload(make());
+test('入力セルだけが黄色地になる', () => {
+  // ヘッダ帯にも背景色が付くので、入力欄の判定は TEXT 書式の有無で行う。
+  const t = make();
+  const p = buildSpreadsheetPayload(t);
   const mobile = p.requests.find((r) => r.updateCells?.range.sheetId === 2).updateCells;
-  const colored = mobile.rows.flatMap((r) => r.values).filter((v) => v?.userEnteredFormat?.backgroundColor);
-  assert.equal(colored.length, make().matches.length);
+  const inputs = mobile.rows.flatMap((r) => r.values)
+    .filter((v) => v?.userEnteredFormat?.numberFormat?.type === 'TEXT');
+  assert.equal(inputs.length, t.matches.length);
+  for (const c of inputs) {
+    const bg = c.userEnteredFormat.backgroundColor;
+    assert.ok(bg.red > 0.95 && bg.green > 0.9 && bg.blue < 0.9, `黄色地でない: ${JSON.stringify(bg)}`);
+  }
 });
 
 test('16チーム4コートでも payload が壊れずに出る', () => {
@@ -97,7 +109,7 @@ test('入力セルに TEXT 書式が付く（"2-1" が日付に化けるのを�
     const p = buildSpreadsheetPayload(t);
     const mobile = p.requests.find((r) => r.updateCells?.range.sheetId === 2).updateCells;
     const inputs = mobile.rows.flatMap((r) => r.values)
-      .filter((v) => v?.userEnteredFormat?.backgroundColor);
+      .filter((v) => v?.userEnteredFormat?.numberFormat);
     assert.equal(inputs.length, t.matches.length, name);
     for (const c of inputs) {
       assert.deepEqual(c.userEnteredFormat.numberFormat, { type: 'TEXT' }, name);

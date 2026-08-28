@@ -71,15 +71,16 @@ export function layoutBracketSheet(tournament) {
     g.set(helperRow(i), hc.winner, `=${controlCell(tournament, m.id, 'winner')}`, { helper: true });
     g.set(helperRow(i), hc.loser, `=${controlCell(tournament, m.id, 'loser')}`, { helper: true });
   });
-  // ブラケット図の列幅（偶数列＝チーム名、奇数列＝連結線）
-  for (let c = 2; c <= lastBracketCol(tournament); c++) {
-    g.setColumnWidth(c, c % 2 === 0 ? 18 : 4);
+  // 列幅は実物の実測値に合わせる: 試合番号7 / チーム名20 / 連結線5 / 説明26。
+  // 偶数列がチーム名、奇数列が連結線という並びは、そのままブラケット図の列構成になる。
+  for (let c = 7; c <= lastBracketCol(tournament); c++) {
+    g.setColumnWidth(c, c % 2 === 0 ? 20 : 5);
   }
 
   let row = 1;
-  g.set(row, 1, tournament.title || `トーナメント表（${tournament.teams}チーム・全${tournament.matches.length}試合）`, { bold: true, size: 14 });
+  g.set(row, 1, tournament.title || `トーナメント表（${tournament.teams}チーム・全${tournament.matches.length}試合）`, { role: 'title' });
   row += 1;
-  g.set(row, 1, subtitle(tournament));
+  g.set(row, 1, subtitle(tournament), { role: 'note' });
   row += 2;
 
   // ツリーを持つ形式（シングル／ダブルの勝者側）はブラケット図として描く。
@@ -104,16 +105,21 @@ export function layoutBracketSheet(tournament) {
     const ms = tournament.matches.filter((m) => !inBracket.has(m.id) && keyOf(m) === key);
     const span = ms.length > 1 ? `（${ms[0].label}〜${ms[ms.length - 1].label}）` : '';
     const note = ms[0].roundNo === 1 && ms[0].bracket !== 'L' && !tournament.tree ? '　※ここだけ抽選で決める' : '';
-    g.set(row, 1, `■ ${ms[0].roundName}${span}${note}`, { bold: true });
+    g.set(row, 1, `■ ${ms[0].roundName}${span}${note}`, { role: 'section' });
+    g.merge(row, 1, row, 6);
     row += 1;
-    g.set(row, 1, '試合').set(row, 2, '対戦カード').set(row, 6, '行き先');
+    for (const c of [1, 2, 3, 4, 5, 6]) g.set(row, c, '', { role: 'tableHeader' });
+    g.cells.get(`${row},1`).value = '試合';
+    g.cells.get(`${row},2`).value = '対戦カード';
+    g.cells.get(`${row},6`).value = '行き先';
     row += 1;
     for (const m of ms) {
-      g.set(row, 1, m.label);
-      g.set(row, 2, liveRefFormula(tournament, m.left), { winnerOf: m.id });
-      g.set(row, 3, 'vs');
-      g.set(row, 4, liveRefFormula(tournament, m.right), { winnerOf: m.id });
-      g.set(row, 6, destinationText(tournament, m));
+      g.set(row, 1, m.label, { role: 'label' });
+      g.set(row, 2, liveRefFormula(tournament, m.left), { role: 'slot', winnerOf: m.id });
+      g.set(row, 3, 'vs', { role: 'body' });
+      g.set(row, 4, liveRefFormula(tournament, m.right), { role: 'slot', winnerOf: m.id });
+      g.set(row, 5, '', { role: 'body' });
+      g.set(row, 6, destinationText(tournament, m), { role: 'note' });
       row += 1;
     }
     row += 1;
@@ -121,17 +127,21 @@ export function layoutBracketSheet(tournament) {
 
   // 終端グループ = 最終2ラウンドに入る4チームずつのまとまり
   for (const group of groups) {
-    g.set(row, 1, `■ ${group.title}`, { bold: true });
+    g.set(row, 1, `■ ${group.title}`, { role: 'section' });
+    g.merge(row, 1, row, 6);
     row += 1;
     const base = row;
     const semiLabels = group.semis.map((x) => x.label).join('・');
-    g.set(base, 2, '進出チーム')
-      .set(base, 4, `${group.semis[0].roundName} ${semiLabels} の勝者`)
-      .set(base, 6, `${group.final.roundName} ${group.final.label}`);
+    g.set(base, 2, '進出チーム', { role: 'tableHeader' })
+      .set(base, 3, '', { role: 'tableHeader' })
+      .set(base, 4, `${group.semis[0].roundName} ${semiLabels} の勝者`, { role: 'tableHeader' })
+      .set(base, 5, '', { role: 'tableHeader' })
+      .set(base, 6, `${group.final.roundName} ${group.final.label}`, { role: 'tableHeader' });
     for (let i = 0; i < group.entrants.length; i++) {
       const { row: r, col: c } = bracketCell(base, 0, i);
       // このチームが進む先は、自分が入る準決勝
       g.set(r, c, liveRefFormula(tournament, group.entrants[i]), {
+        role: 'team',
         winnerOf: group.semis[Math.floor(i / 2)].id,
       });
     }
@@ -144,21 +154,26 @@ export function layoutBracketSheet(tournament) {
     drawBranches(g, base, [group.entrants.length, group.semis.length, 1]);
     {
       const { row: r, col: c } = bracketCell(base, 2, 0);
-      g.set(r, c, `=IF(${controlCell(tournament, group.final.id, 'winner')}="","★ ${group.final.decides.winner}位","★ "&${controlCell(tournament, group.final.id, 'winner')})`, { championOf: group.final.id });
+      g.set(r, c, `=IF(${controlCell(tournament, group.final.id, 'winner')}="","★ ${group.final.decides.winner}位","★ "&${controlCell(tournament, group.final.id, 'winner')})`, { role: 'slot', championOf: group.final.id });
     }
     row = base + bracketHeight(group.entrants.length);
     // 下位決定戦は図にせずリスト1行で置く（実物と同じ）
-    g.set(row, 1, group.consolation.label);
-    g.set(row, 2, liveRefFormula(tournament, group.consolation.left), { winnerOf: group.consolation.id });
-    g.set(row, 3, 'vs');
-    g.set(row, 4, liveRefFormula(tournament, group.consolation.right), { winnerOf: group.consolation.id });
-    g.set(row, 6, `${group.consolation.roundName}（勝者＝${group.consolation.decides.winner}位／敗者＝${group.consolation.decides.loser}位）`);
+    g.set(row, 1, group.consolation.label, { role: 'label' });
+    g.set(row, 2, liveRefFormula(tournament, group.consolation.left), { role: 'slot', winnerOf: group.consolation.id });
+    g.set(row, 3, 'vs', { role: 'body' });
+    g.set(row, 4, liveRefFormula(tournament, group.consolation.right), { role: 'slot', winnerOf: group.consolation.id });
+    g.set(row, 5, '', { role: 'body' });
+    g.set(row, 6, `${group.consolation.roundName}（勝者＝${group.consolation.decides.winner}位／敗者＝${group.consolation.decides.loser}位）`, { role: 'note' });
     row += 2;
   }
 
-  g.set(row, 1, '■ 最終順位', { bold: true });
+  g.set(row, 1, '■ 最終順位', { role: 'section' });
+  g.merge(row, 1, row, 6);
   row += 1;
-  g.set(row, 1, '順位').set(row, 2, 'チーム名').set(row, 6, '決定方法');
+  for (const c of [1, 2, 3, 4, 5, 6]) g.set(row, c, '', { role: 'tableHeader' });
+  g.cells.get(`${row},1`).value = '順位';
+  g.cells.get(`${row},2`).value = 'チーム名';
+  g.cells.get(`${row},6`).value = '決定方法';
   row += 1;
   const placements = tournament.matches
     .filter((x) => x.decides)
@@ -179,9 +194,10 @@ export function layoutBracketSheet(tournament) {
       .slice()
       .reverse()
       .reduceRight((acc, c) => `IF(${c.cell}<>"",${c.cell},${acc})`, '""');
-    g.set(row, 1, `${rank}位`);
-    g.set(row, 2, `=${formula}`, rank === 1 ? { championOf: cands.at(-1).matchId } : {});
-    g.set(row, 6, cands.map((c) => c.text).join(' ／ '));
+    g.set(row, 1, `${rank}位`, { role: 'label' });
+    g.set(row, 2, `=${formula}`, rank === 1 ? { role: 'slot', championOf: cands.at(-1).matchId } : { role: 'slot' });
+    for (const c of [3, 4, 5]) g.set(row, c, '', { role: 'body' });
+    g.set(row, 6, cands.map((c) => c.text).join(' ／ '), { role: 'note' });
     row += 1;
   }
   return g;
@@ -271,7 +287,8 @@ export function subtitle(t) {
 function renderTree(g, tournament, startRow, inBracket) {
   const { levels } = tournament.tree;
   let row = startRow;
-  g.set(row, 1, `■ ${tournament.tree.title ?? '本戦'}`, { bold: true });
+  g.set(row, 1, `■ ${tournament.tree.title ?? '本戦'}`, { role: 'section' });
+  g.merge(row, 1, row, 6);
   row += 1;
   const base = row;
 
@@ -288,12 +305,13 @@ function renderTree(g, tournament, startRow, inBracket) {
       const { row: r, col: c } = bracketCell(base, j, i);
       // このスロットの勝ち上がり先は、ひとつ上のラウンドの対応スロット
       const parent = levels[j + 1] ? levels[j + 1][Math.floor(i / 2)] : null;
+      const base2 = { role: j === 0 ? 'team' : 'slot' };
       const style =
         parent && parent.type === 'winner'
-          ? { winnerOf: parent.match }
+          ? { ...base2, winnerOf: parent.match }
           : j === levels.length - 1 && ref.type === 'winner'
-            ? { championOf: ref.match }
-            : {};
+            ? { ...base2, championOf: ref.match }
+            : base2;
       g.set(r, c, liveRefFormula(tournament, ref), style);
       if (ref.type === 'winner') inBracket.add(ref.match);
     });

@@ -1,6 +1,7 @@
 import { layoutBracketSheet, helperCols } from './layout.js';
 import { layoutProgressSheet, layoutMobileSheet, layoutControlSheet, TABS } from './sheets.js';
 import { COLORS, toRgb } from './palette.js';
+import { THEME, ROLES } from './theme.js';
 import { buildConditionalFormatRules } from './formatting.js';
 
 /**
@@ -44,6 +45,14 @@ export function buildSpreadsheetPayload(tournament) {
           range: { sheetId, dimension: 'COLUMNS', startIndex: col - 1, endIndex: col },
           properties: { pixelSize: Math.round(width * 7.5) },
           fields: 'pixelSize',
+        },
+      });
+    }
+    if (grid.frozenRows) {
+      requests.push({
+        updateSheetProperties: {
+          properties: { sheetId, gridProperties: { frozenRowCount: grid.frozenRows } },
+          fields: 'gridProperties.frozenRowCount',
         },
       });
     }
@@ -115,28 +124,49 @@ function updateCellsRequest(sheetId, grid) {
 function cellData(cell) {
   if (!cell) return {};
   const style = cell.style ?? {};
-  const out = { userEnteredFormat: {} };
+  const fmt = {};
 
   const v = cell.value;
-  if (v !== '' && v != null) {
-    out.userEnteredValue = String(v).startsWith('=')
-      ? { formulaValue: String(v) }
-      : { stringValue: String(v) };
+  const value =
+    v !== '' && v != null
+      ? String(v).startsWith('=')
+        ? { formulaValue: String(v) }
+        : { stringValue: String(v) }
+      : null;
+
+  // 役割から書式を決める。個別指定（bold/size）は役割より優先する。
+  const role = ROLES[style.role] ?? null;
+  const text = { fontFamily: THEME.font };
+  if (role) {
+    if (role.bold) text.bold = true;
+    if (role.size) text.fontSize = THEME.sizes[role.size];
+    if (role.color) text.foregroundColor = toRgb(THEME.colors[role.color]);
+    if (role.fill) fmt.backgroundColor = toRgb(THEME.colors[role.fill]);
+    if (role.align) fmt.horizontalAlignment = role.align;
+    if (role.box) fmt.borders = boxBorders();
   }
-  const textFormat = {};
-  if (style.bold) textFormat.bold = true;
-  if (style.size) textFormat.fontSize = style.size;
-  if (Object.keys(textFormat).length) out.userEnteredFormat.textFormat = textFormat;
+  if (style.bold) text.bold = true;
+  if (style.size) text.fontSize = style.size;
+  fmt.textFormat = text;
+  fmt.verticalAlignment = 'MIDDLE';
 
   if (style.input) {
-    out.userEnteredFormat.backgroundColor = toRgb(COLORS.resultPending);
+    fmt.backgroundColor = toRgb(THEME.colors.inputFill);
     // 必須。TEXT にしないと "2-1" や "1-2" が日付として解釈され（46054 等のシリアル値になる）、
     // 勝敗判定の文字列比較が黙って外れる。3-0 / 0-3 は不正な日付なので文字列のまま残り、
     // 症状がまだらに出るため気づきにくい。
-    out.userEnteredFormat.numberFormat = { type: 'TEXT' };
+    fmt.numberFormat = { type: 'TEXT' };
   }
-  if (!out.userEnteredValue && !Object.keys(out.userEnteredFormat).length) return {};
+
+  const out = { userEnteredFormat: fmt };
+  if (value) out.userEnteredValue = value;
   return out;
+}
+
+/** 実物と同じ、細いグレーの格子。 */
+function boxBorders() {
+  const line = { style: 'SOLID', color: toRgb(THEME.colors.grid) };
+  return { top: line, bottom: line, left: line, right: line };
 }
 
 function validationRequests(sheetId, grid) {

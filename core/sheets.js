@@ -89,20 +89,21 @@ export function layoutControlSheet(tournament) {
 /** スマホ用タブ。結果入力の唯一の入口。 */
 export function layoutMobileSheet(tournament) {
   const g = new Grid(TABS.mobile);
+  g.frozenRows = MOBILE_ROW - 1; // 見出し行までを固定。スクロールしても列の意味が分かる
   const sc = getScoring(tournament.scoring);
   g.setColumnWidth(1, 8).setColumnWidth(2, 22).setColumnWidth(3, 12).setColumnWidth(4, 14);
 
-  g.set(1, 1, tournament.title || 'スマホ用 結果入力', { bold: true, size: 14 });
-  g.set(2, 1, `黄色いセルに結果（${sc.options.join(' / ')}）を入れると、全タブの勝者・次戦・色が自動で更新されます。`);
-  ['試合', '対戦', '結果', '勝者'].forEach((h, i) => g.set(4, i + 1, h, { bold: true }));
+  g.set(1, 1, tournament.title || 'スマホ用 結果入力', { role: 'title' });
+  g.set(2, 1, `黄色いセルに結果（${sc.options.join(' / ')}）を入れると、全タブの勝者・次戦・色が自動で更新されます。`, { role: 'note' });
+  ['試合', '対戦', '結果', '勝者'].forEach((h, i) => g.set(4, i + 1, h, { role: 'tableHeader' }));
 
   tournament.matches.forEach((m, i) => {
     const r = MOBILE_ROW + i;
     const c = cellRefs.controlRow(i);
-    g.set(r, 1, m.label);
-    g.set(r, 2, `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`);
-    g.set(r, 3, '', { input: true, validation: sc.options });
-    g.set(r, 4, `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`);
+    g.set(r, 1, m.label, { role: 'label' });
+    g.set(r, 2, `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`, { role: 'slot' });
+    g.set(r, 3, '', { role: 'input', input: true, validation: sc.options });
+    g.set(r, 4, `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`, { role: 'slot' });
   });
   return g;
 }
@@ -110,36 +111,39 @@ export function layoutMobileSheet(tournament) {
 /** 進行表タブ。チーム名の記入欄と、枠ごとの進行一覧。 */
 export function layoutProgressSheet(tournament) {
   const g = new Grid(TABS.progress);
+  g.frozenRows = 2;
   g.setColumnWidth(1, 8).setColumnWidth(2, 20).setColumnWidth(3, 8)
     .setColumnWidth(4, 26).setColumnWidth(5, 12).setColumnWidth(6, 16);
 
-  g.set(1, 1, tournament.title || `進行表（${tournament.teams}チーム・全${tournament.matches.length}試合）`, { bold: true, size: 14 });
-  g.set(2, 1, `コート${tournament.courts}面／全${tournament.slots.length}枠／全${tournament.matches.length}試合／${eliminationRule(tournament)}`);
+  g.set(1, 1, tournament.title || `進行表（${tournament.teams}チーム・全${tournament.matches.length}試合）`, { role: 'title' });
+  g.set(2, 1, `コート${tournament.courts}面／全${tournament.slots.length}枠／全${tournament.matches.length}試合／${eliminationRule(tournament)}`, { role: 'note' });
 
-  g.set(4, 1, '■ 出場チーム（ここに記入すると全タブの対戦カードに反映されます）', { bold: true });
-  g.set(5, 1, '記号', { bold: true });
-  g.set(5, 2, 'チーム名', { bold: true });
+  g.set(4, 1, '■ 出場チーム（ここに記入すると全タブの対戦カードに反映されます）', { role: 'section' });
+  g.merge(4, 1, 4, 6);
+  g.set(5, 1, '記号', { role: 'tableHeader' });
+  g.set(5, 2, 'チーム名', { role: 'tableHeader' });
   tournament.teamLabels.forEach((label, i) => {
-    g.set(TEAM_INPUT_ROW + i, 1, label);
-    g.set(TEAM_INPUT_ROW + i, 2, '', { input: true });
+    g.set(TEAM_INPUT_ROW + i, 1, label, { role: 'label' });
+    g.set(TEAM_INPUT_ROW + i, 2, '', { role: 'input', input: true });
   });
 
   let row = TEAM_INPUT_ROW + tournament.teams + 1;
-  g.set(row, 1, '■ 進行順（枠の中の試合は同時に進行。枠が終わったら次の枠へ）', { bold: true });
+  g.set(row, 1, '■ 進行順（枠の中の試合は同時に進行。枠が終わったら次の枠へ）', { role: 'section' });
+  g.merge(row, 1, row, 6);
   row += 1;
-  ['枠', 'コート', '試合', '対戦カード', '結果', '勝者'].forEach((h, i) => g.set(row, i + 1, h, { bold: true }));
+  ['枠', 'コート', '試合', '対戦カード', '結果', '勝者'].forEach((h, i) => g.set(row, i + 1, h, { role: 'tableHeader' }));
   row += 1;
 
   for (const slot of tournament.slots) {
     for (const [n, entry] of slot.matches.entries()) {
       const i = matchIndex(tournament, entry.matchId);
       const c = cellRefs.controlRow(i);
-      if (n === 0) g.set(row, 1, slot.label);
-      g.set(row, 2, `コート${entry.court}`);
-      g.set(row, 3, entry.matchLabel);
-      g.set(row, 4, `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`);
-      g.set(row, 5, `=IF('${TABS.control}'!$D$${c}="","",'${TABS.control}'!$D$${c})`);
-      g.set(row, 6, `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`);
+      g.set(row, 1, n === 0 ? slot.label : '', { role: 'label' });
+      g.set(row, 2, `コート${entry.court}`, { role: 'body' });
+      g.set(row, 3, entry.matchLabel, { role: 'label' });
+      g.set(row, 4, `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`, { role: 'slot' });
+      g.set(row, 5, `=IF('${TABS.control}'!$D$${c}="","",'${TABS.control}'!$D$${c})`, { role: 'body' });
+      g.set(row, 6, `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`, { role: 'slot' });
       row += 1;
     }
   }
