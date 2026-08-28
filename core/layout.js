@@ -1,4 +1,5 @@
 import { Grid, a1 } from './grid.js';
+import { liveRefFormula, controlCell } from './sheets.js';
 
 // 実物 8team_volleyball_base.xlsx と同じ列構成
 export const COLUMNS = [
@@ -27,10 +28,6 @@ export function bracketHeight(entrants) {
   return entrants * 2;
 }
 
-const refText = (t, ref) =>
-  ref.type === 'team'
-    ? `（${ref.label}チーム）`
-    : `${ref.matchLabel}の${ref.type === 'winner' ? '勝者' : '敗者'}`;
 
 /**
  * トーナメント表タブのグリッドを組む。
@@ -64,9 +61,9 @@ export function layoutBracketSheet(tournament) {
     row += 1;
     for (const m of ms) {
       g.set(row, 1, m.label);
-      g.set(row, 2, refText(tournament, m.left));
+      g.set(row, 2, liveRefFormula(tournament, m.left));
       g.set(row, 3, 'vs');
-      g.set(row, 4, refText(tournament, m.right));
+      g.set(row, 4, liveRefFormula(tournament, m.right));
       g.set(row, 6, destinationText(tournament, m));
       row += 1;
     }
@@ -84,22 +81,22 @@ export function layoutBracketSheet(tournament) {
       .set(base, 6, `${group.final.roundName} ${group.final.label}`);
     for (let i = 0; i < group.entrants.length; i++) {
       const { row: r, col: c } = bracketCell(base, 0, i);
-      g.set(r, c, refText(tournament, group.entrants[i]));
+      g.set(r, c, liveRefFormula(tournament, group.entrants[i]));
     }
     for (let i = 0; i < group.semis.length; i++) {
       const { row: r, col: c } = bracketCell(base, 1, i);
-      g.set(r, c, `${group.semis[i].label}の勝者`);
+      g.set(r, c, liveRefFormula(tournament, { type: 'winner', match: group.semis[i].id, matchLabel: group.semis[i].label }));
     }
     {
       const { row: r, col: c } = bracketCell(base, 2, 0);
-      g.set(r, c, `★ ${group.final.decides.winner}位`);
+      g.set(r, c, `=IF(${controlCell(tournament, group.final.id, 'winner')}="","★ ${group.final.decides.winner}位","★ "&${controlCell(tournament, group.final.id, 'winner')})`);
     }
     row = base + bracketHeight(group.entrants.length);
     // 下位決定戦は図にせずリスト1行で置く（実物と同じ）
     g.set(row, 1, group.consolation.label);
-    g.set(row, 2, refText(tournament, group.consolation.left));
+    g.set(row, 2, liveRefFormula(tournament, group.consolation.left));
     g.set(row, 3, 'vs');
-    g.set(row, 4, refText(tournament, group.consolation.right));
+    g.set(row, 4, liveRefFormula(tournament, group.consolation.right));
     g.set(row, 6, `${group.consolation.roundName}（勝者＝${group.consolation.decides.winner}位／敗者＝${group.consolation.decides.loser}位）`);
     row += 2;
   }
@@ -111,12 +108,13 @@ export function layoutBracketSheet(tournament) {
   const placements = tournament.matches
     .filter((x) => x.decides)
     .flatMap((m) => [
-      { rank: m.decides.winner, text: `${m.label} ${m.roundName}の勝者` },
-      { rank: m.decides.loser, text: `${m.label} ${m.roundName}の敗者` },
+      { rank: m.decides.winner, text: `${m.label} ${m.roundName}の勝者`, cell: controlCell(tournament, m.id, 'winner') },
+      { rank: m.decides.loser, text: `${m.label} ${m.roundName}の敗者`, cell: controlCell(tournament, m.id, 'loser') },
     ])
     .sort((a, b) => a.rank - b.rank);
   for (const p of placements) {
     g.set(row, 1, `${p.rank}位`);
+    g.set(row, 2, `=IF(${p.cell}="","",${p.cell})`);
     g.set(row, 6, p.text);
     row += 1;
   }

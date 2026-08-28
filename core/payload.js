@@ -96,6 +96,10 @@ function cellData(cell) {
 
   if (style.input) {
     out.userEnteredFormat.backgroundColor = toRgb(COLORS.resultPending);
+    // 必須。TEXT にしないと "2-1" や "1-2" が日付として解釈され（46054 等のシリアル値になる）、
+    // 勝敗判定の文字列比較が黙って外れる。3-0 / 0-3 は不正な日付なので文字列のまま残り、
+    // 症状がまだらに出るため気づきにくい。
+    out.userEnteredFormat.numberFormat = { type: 'TEXT' };
   }
   if (!out.userEnteredValue && !Object.keys(out.userEnteredFormat).length) return {};
   return out;

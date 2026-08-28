@@ -75,3 +75,28 @@ test('最初の終端グループが優勝を決めるブラケットになる',
     assert.equal(groups[0].final.decides.winner, 1, `${n}チーム`);
   }
 });
+
+test('最終順位表にチーム名を引く数式が全順位ぶん入る', () => {
+  for (const n of [4, 8, 16]) {
+    const g = layoutBracketSheet(buildFullPlacement({ teams: n }));
+    const rankRows = [...g.cells.values()]
+      .filter((c) => c.col === 1 && /^\d+位$/.test(String(c.value)))
+      .map((c) => c.row);
+    assert.equal(rankRows.length, n);
+    for (const r of rankRows) {
+      const cell = g.cells.get(`${r},2`);
+      assert.ok(cell, `${n}チーム: ${r}行にチーム名セルが無い`);
+      assert.match(String(cell.value), /^=IF\('試合管理'!\$[EF]\$\d+="","",/, `${n}チーム: ${r}行`);
+    }
+  }
+});
+
+test('ブラケット図のセルが試合管理を参照する生きた数式になる', () => {
+  const g = layoutBracketSheet(buildFullPlacement({ teams: 8 }));
+  const live = [...g.cells.values()].filter((c) => String(c.value).includes("'試合管理'!"));
+  // 進出チーム4×2グループ + 準決勝勝者2×2 + 決勝1×2 + 順位表8 + 下位決定戦の左右2×2
+  assert.ok(live.length >= 20, `生きた数式が少なすぎる: ${live.length}`);
+  for (const c of live) {
+    assert.match(String(c.value), /^=IF\(/, `${c.row},${c.col}`);
+  }
+});

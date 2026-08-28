@@ -23,6 +23,26 @@ export const cellRefs = {
 
 const matchIndex = (t, id) => t.matches.findIndex((m) => m.id === id);
 
+/** 試合管理の勝者/敗者セルを指すA1参照。 */
+export function controlCell(tournament, matchId, kind) {
+  const col = kind === 'winner' ? 'E' : 'F';
+  return `'${TABS.control}'!$${col}$${cellRefs.controlRow(matchIndex(tournament, matchId))}`;
+}
+
+/**
+ * 表示用セルの数式。未確定なら進み方の目印（「①の勝者」等）を出し、
+ * 確定したら実際のチーム名に変わる。
+ */
+export function liveRefFormula(tournament, ref) {
+  if (ref.type === 'team') {
+    const c = cellRefs.teamName(ref.index);
+    return `=IF(${c}="","（${ref.label}チーム）",${c})`;
+  }
+  const cell = controlCell(tournament, ref.match, ref.type);
+  const placeholder = `${ref.matchLabel}の${ref.type === 'winner' ? '勝者' : '敗者'}`;
+  return `=IF(${cell}="","${placeholder}",${cell})`;
+}
+
 /** 試合管理タブ（非表示）。依存関係の解決と勝敗判定をここに集約する。 */
 export function layoutControlSheet(tournament) {
   const g = new Grid(TABS.control);

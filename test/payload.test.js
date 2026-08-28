@@ -88,3 +88,25 @@ test('16チーム4コートでも payload が壊れずに出る', () => {
   assert.equal(p.requests.filter((r) => r.updateCells).length, 4);
   assert.equal(p.requests.filter((r) => r.setDataValidation).length, 32);
 });
+
+test('入力セルに TEXT 書式が付く（"2-1" が日付に化けるのを防ぐ）', () => {
+  for (const name of ['win-loss', 'sets-of-3', 'sets-of-5']) {
+    const t = make({ scoring: name });
+    const p = buildSpreadsheetPayload(t);
+    const mobile = p.requests.find((r) => r.updateCells?.range.sheetId === 2).updateCells;
+    const inputs = mobile.rows.flatMap((r) => r.values)
+      .filter((v) => v?.userEnteredFormat?.backgroundColor);
+    assert.equal(inputs.length, t.matches.length, name);
+    for (const c of inputs) {
+      assert.deepEqual(c.userEnteredFormat.numberFormat, { type: 'TEXT' }, name);
+    }
+  }
+});
+
+test('日付に化けうる選択肢を持つプリセットを検出できる', () => {
+  // Sheets が日付として解釈しうる形 "M-D" を含むプリセットは TEXT 書式が必須になる
+  const risky = (o) => /^\d{1,2}-\d{1,2}$/.test(o) && Number(o.split('-')[0]) >= 1 && Number(o.split('-')[0]) <= 12 && Number(o.split('-')[1]) >= 1;
+  assert.ok(getScoring('sets-of-3').options.some(risky), 'sets-of-3 は危険な選択肢を含む');
+  assert.ok(getScoring('sets-of-5').options.some(risky), 'sets-of-5 は危険な選択肢を含む');
+  assert.ok(!getScoring('win-loss').options.some(risky), 'win-loss は含まない');
+});
