@@ -47,3 +47,10 @@
 - 「同じ枠に同じチームが2回出ない」を不変条件としてテストに固定した。
   依存関係から構造的に保証されるが、ダブルエリミ追加時に壊れうるため。
 - `npm test`: 26件すべてPASS。
+- `core/payload.js` を実装。グリッドを `spreadsheets.create` の body と `batchUpdate` の
+  リクエスト配列へ変換する。生のリクエストデータなので Apps Script / Node CLI / MCP の3経路で同じものを使える。
+- 8チーム2コートで 32リクエスト（updateCells 4 / updateDimensionProperties 16 / setDataValidation 12）。
+- payload のテストを追加: 全リクエストが実在シートIDを指す、書き込み範囲が rowCount/columnCount に収まる、
+  数式は formulaValue・文字列は stringValue、入力規則が全試合ぶんスマホ用タブに出る、入力セルに未入力色が付く。
+- `npm test`: 33件すべてPASS。
+- 残る未実施は「実際にDriveへ適用して読み戻す」検証のみ。google-multi MCP の再接続待ち。

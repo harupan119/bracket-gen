@@ -38,9 +38,9 @@ Google Sheets を生成する仕組みを作る。サークル内で代々引き
 - [x] 4タブ（トーナメント表／進行表／スマホ用／試合管理[非表示]）のグリッドと数式を組む
 - [x] 結果入力をスマホ用の1列に一本化する
 - [x] 生成した数式から依存グラフを逆算してモデルと一致することを検証する
-- [ ] core が `spreadsheets.batchUpdate` のリクエスト配列を出す形にする
+- [x] core が `spreadsheets.create` の body と `batchUpdate` のリクエスト配列を出す形にする
 - [ ] MCP経由で実際に適用し、生成されたSheetsを読み戻して検証する（★google-multi MCP の再接続が必要）
-- **Status:** in progress
+- **Status:** in progress（適用のみ未実施）
 
 ### Phase 4: 条件付き書式と自動進行
 - [ ] 試合管理タブの依存関係数式を生成する

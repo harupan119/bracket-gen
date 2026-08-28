@@ -1,0 +1,90 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { buildTournament } from '../core/index.js';
+import { buildSpreadsheetPayload } from '../core/payload.js';
+import { getScoring } from '../core/scoring.js';
+import { TABS } from '../core/sheets.js';
+
+const make = (o = {}) =>
+  buildTournament({ format: 'full-placement', teams: 8, courts: 2, title: 'T', scoring: 'sets-of-3', ...o });
+
+test('4タブが作られ、試合管理だけが非表示になる', () => {
+  const p = buildSpreadsheetPayload(make());
+  assert.deepEqual(
+    p.create.sheets.map((s) => s.properties.title),
+    [TABS.bracket, TABS.progress, TABS.mobile, TABS.control]
+  );
+  assert.deepEqual(p.create.sheets.map((s) => s.properties.hidden), [false, false, false, true]);
+});
+
+test('全リクエストが実在するシートIDを指す', () => {
+  for (const teams of [4, 8, 16]) {
+    const p = buildSpreadsheetPayload(make({ teams }));
+    const ids = new Set(p.create.sheets.map((s) => s.properties.sheetId));
+    for (const r of p.requests) {
+      const body = r[Object.keys(r)[0]];
+      const id = body.range?.sheetId;
+      assert.ok(ids.has(id), `${teams}チーム: 未知のsheetId ${id}`);
+    }
+  }
+});
+
+test('書き込み範囲がシートの行数・列数に収まる', () => {
+  for (const teams of [4, 8, 16]) {
+    const p = buildSpreadsheetPayload(make({ teams }));
+    const dims = new Map(p.create.sheets.map((s) => [s.properties.sheetId, s.properties.gridProperties]));
+    for (const r of p.requests) {
+      const body = r[Object.keys(r)[0]];
+      if (!body.range) continue;
+      const d = dims.get(body.range.sheetId);
+      if (body.range.endRowIndex != null) {
+        assert.ok(body.range.endRowIndex <= d.rowCount, `${teams}チーム: 行あふれ`);
+      }
+      if (body.range.endColumnIndex != null) {
+        assert.ok(body.range.endColumnIndex <= d.columnCount, `${teams}チーム: 列あふれ`);
+      }
+    }
+  }
+});
+
+test('数式は formulaValue、文字列は stringValue で出る', () => {
+  const p = buildSpreadsheetPayload(make());
+  const control = p.requests.find((r) => r.updateCells?.range.sheetId === 3).updateCells;
+  const b2 = control.rows[1].values[1];
+  assert.ok(b2.userEnteredValue.formulaValue.startsWith('=IF('), '数式');
+  const a2 = control.rows[1].values[0];
+  assert.equal(a2.userEnteredValue.stringValue, '①', '文字列');
+  // 空セルに値を持たせない
+  const empty = control.rows[0].values[7];
+  assert.deepEqual(empty ?? {}, {});
+});
+
+test('入力規則が全試合ぶん出て、選択肢がプリセットと一致する', () => {
+  for (const name of ['win-loss', 'sets-of-3', 'sets-of-5']) {
+    const t = make({ scoring: name });
+    const p = buildSpreadsheetPayload(t);
+    const vs = p.requests.filter((r) => r.setDataValidation);
+    assert.equal(vs.length, t.matches.length, name);
+    for (const v of vs) {
+      assert.equal(v.setDataValidation.range.sheetId, 2, `${name}: 入力規則はスマホ用タブに置く`);
+      assert.deepEqual(
+        v.setDataValidation.rule.condition.values.map((x) => x.userEnteredValue),
+        getScoring(name).options, name
+      );
+      assert.equal(v.setDataValidation.rule.strict, true, name);
+    }
+  }
+});
+
+test('入力セルに未入力色が付く', () => {
+  const p = buildSpreadsheetPayload(make());
+  const mobile = p.requests.find((r) => r.updateCells?.range.sheetId === 2).updateCells;
+  const colored = mobile.rows.flatMap((r) => r.values).filter((v) => v?.userEnteredFormat?.backgroundColor);
+  assert.equal(colored.length, make().matches.length);
+});
+
+test('16チーム4コートでも payload が壊れずに出る', () => {
+  const p = buildSpreadsheetPayload(make({ teams: 16, courts: 4 }));
+  assert.equal(p.requests.filter((r) => r.updateCells).length, 4);
+  assert.equal(p.requests.filter((r) => r.setDataValidation).length, 32);
+});
