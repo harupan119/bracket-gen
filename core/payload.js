@@ -1,6 +1,7 @@
-import { layoutBracketSheet } from './layout.js';
+import { layoutBracketSheet, HELPER_COL } from './layout.js';
 import { layoutProgressSheet, layoutMobileSheet, layoutControlSheet, TABS } from './sheets.js';
 import { COLORS, toRgb } from './palette.js';
+import { buildConditionalFormatRules } from './formatting.js';
 
 /**
  * グリッドを Google Sheets の API リクエストへ変換する。
@@ -56,6 +57,26 @@ export function buildSpreadsheetPayload(tournament) {
     }
     requests.push(...validationRequests(sheetId, grid));
   }
+
+  // 補助列は運営に見せない
+  for (const col of [HELPER_COL.winner, HELPER_COL.loser]) {
+    requests.push({
+      updateDimensionProperties: {
+        range: { sheetId: 0, dimension: 'COLUMNS', startIndex: col - 1, endIndex: col },
+        properties: { hiddenByUser: true },
+        fields: 'hiddenByUser',
+      },
+    });
+  }
+
+  // 条件付き書式はグリッドに付けたタグから起こす
+  requests.push(
+    ...buildConditionalFormatRules(
+      tournament,
+      { bracket: sheets[0].grid, progress: sheets[1].grid },
+      { bracket: 0, progress: 1, mobile: 2, control: 3 }
+    )
+  );
 
   return { create, requests, sheets: sheets.map(({ sheetId, title }) => ({ sheetId, title })) };
 }

@@ -38,9 +38,27 @@ export function bracketHeight(entrants) {
  *   3. 終端グループ（4チームずつ）を標準ブラケット図で
  *   4. 最終順位表
  */
+// 条件付き書式の数式は他シートを参照できないため、勝者・敗者を同一シートへ写す隠し列を置く。
+// INDIRECT でも回避できるが、再計算が遅れて色が残る既知の問題があるので使わない。
+export const HELPER_COL = { winner: 8, loser: 9 };
+export const helperRow = (matchIndex) => matchIndex + 2;
+
+export function helperCell(tournament, matchId, kind) {
+  const i = tournament.matches.findIndex((m) => m.id === matchId);
+  return `$${a1(1, HELPER_COL[kind]).replace(/\d+$/, '')}$${helperRow(i)}`;
+}
+
 export function layoutBracketSheet(tournament) {
   const g = new Grid('トーナメント表');
   for (const { col, width } of COLUMNS) g.setColumnWidth(col, width);
+
+  // 隠し補助列（H:I）。表示はしないが、条件付き書式がここを見る。
+  g.set(1, HELPER_COL.winner, '（内部）勝者', { helper: true });
+  g.set(1, HELPER_COL.loser, '（内部）敗者', { helper: true });
+  tournament.matches.forEach((m, i) => {
+    g.set(helperRow(i), HELPER_COL.winner, `=${controlCell(tournament, m.id, 'winner')}`, { helper: true });
+    g.set(helperRow(i), HELPER_COL.loser, `=${controlCell(tournament, m.id, 'loser')}`, { helper: true });
+  });
 
   let row = 1;
   g.set(row, 1, tournament.title || `トーナメント表（${tournament.teams}チーム・全${tournament.matches.length}試合）`, { bold: true, size: 14 });
@@ -61,9 +79,9 @@ export function layoutBracketSheet(tournament) {
     row += 1;
     for (const m of ms) {
       g.set(row, 1, m.label);
-      g.set(row, 2, liveRefFormula(tournament, m.left));
+      g.set(row, 2, liveRefFormula(tournament, m.left), { winnerOf: m.id });
       g.set(row, 3, 'vs');
-      g.set(row, 4, liveRefFormula(tournament, m.right));
+      g.set(row, 4, liveRefFormula(tournament, m.right), { winnerOf: m.id });
       g.set(row, 6, destinationText(tournament, m));
       row += 1;
     }
@@ -81,22 +99,27 @@ export function layoutBracketSheet(tournament) {
       .set(base, 6, `${group.final.roundName} ${group.final.label}`);
     for (let i = 0; i < group.entrants.length; i++) {
       const { row: r, col: c } = bracketCell(base, 0, i);
-      g.set(r, c, liveRefFormula(tournament, group.entrants[i]));
+      // このチームが進む先は、自分が入る準決勝
+      g.set(r, c, liveRefFormula(tournament, group.entrants[i]), {
+        winnerOf: group.semis[Math.floor(i / 2)].id,
+      });
     }
     for (let i = 0; i < group.semis.length; i++) {
       const { row: r, col: c } = bracketCell(base, 1, i);
-      g.set(r, c, liveRefFormula(tournament, { type: 'winner', match: group.semis[i].id, matchLabel: group.semis[i].label }));
+      g.set(r, c, liveRefFormula(tournament, { type: 'winner', match: group.semis[i].id, matchLabel: group.semis[i].label }), {
+        winnerOf: group.final.id,
+      });
     }
     {
       const { row: r, col: c } = bracketCell(base, 2, 0);
-      g.set(r, c, `=IF(${controlCell(tournament, group.final.id, 'winner')}="","★ ${group.final.decides.winner}位","★ "&${controlCell(tournament, group.final.id, 'winner')})`);
+      g.set(r, c, `=IF(${controlCell(tournament, group.final.id, 'winner')}="","★ ${group.final.decides.winner}位","★ "&${controlCell(tournament, group.final.id, 'winner')})`, { championOf: group.final.id });
     }
     row = base + bracketHeight(group.entrants.length);
     // 下位決定戦は図にせずリスト1行で置く（実物と同じ）
     g.set(row, 1, group.consolation.label);
-    g.set(row, 2, liveRefFormula(tournament, group.consolation.left));
+    g.set(row, 2, liveRefFormula(tournament, group.consolation.left), { winnerOf: group.consolation.id });
     g.set(row, 3, 'vs');
-    g.set(row, 4, liveRefFormula(tournament, group.consolation.right));
+    g.set(row, 4, liveRefFormula(tournament, group.consolation.right), { winnerOf: group.consolation.id });
     g.set(row, 6, `${group.consolation.roundName}（勝者＝${group.consolation.decides.winner}位／敗者＝${group.consolation.decides.loser}位）`);
     row += 2;
   }
@@ -108,13 +131,13 @@ export function layoutBracketSheet(tournament) {
   const placements = tournament.matches
     .filter((x) => x.decides)
     .flatMap((m) => [
-      { rank: m.decides.winner, text: `${m.label} ${m.roundName}の勝者`, cell: controlCell(tournament, m.id, 'winner') },
-      { rank: m.decides.loser, text: `${m.label} ${m.roundName}の敗者`, cell: controlCell(tournament, m.id, 'loser') },
+      { rank: m.decides.winner, text: `${m.label} ${m.roundName}の勝者`, cell: controlCell(tournament, m.id, 'winner'), matchId: m.id },
+      { rank: m.decides.loser, text: `${m.label} ${m.roundName}の敗者`, cell: controlCell(tournament, m.id, 'loser'), matchId: m.id },
     ])
     .sort((a, b) => a.rank - b.rank);
   for (const p of placements) {
     g.set(row, 1, `${p.rank}位`);
-    g.set(row, 2, `=IF(${p.cell}="","",${p.cell})`);
+    g.set(row, 2, `=IF(${p.cell}="","",${p.cell})`, p.rank === 1 ? { championOf: p.matchId } : {});
     g.set(row, 6, p.text);
     row += 1;
   }

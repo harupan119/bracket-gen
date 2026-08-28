@@ -38,7 +38,10 @@ test('4 / 8 / 16 チームでレイアウト衝突が起きない', () => {
     const t = buildFullPlacement({ teams: n });
     const g = layoutBracketSheet(t);
     assert.ok(g.cells.size > 0, `${n}チーム: セルが空`);
-    assert.ok(g.maxCol <= 6, `${n}チーム: 列が A〜F を超えた (maxCol=${g.maxCol})`);
+    // A〜F が表示列、H:I が条件付き書式用の隠し補助列
+    assert.ok(g.maxCol <= 9, `${n}チーム: 列が I を超えた (maxCol=${g.maxCol})`);
+    const visible = [...g.cells.values()].filter((c) => !c.style.helper);
+    assert.ok(Math.max(...visible.map((c) => c.col)) <= 6, `${n}チーム: 表示列が F を超えた`);
   }
 });
 
@@ -91,9 +94,22 @@ test('最終順位表にチーム名を引く数式が全順位ぶん入る', ()
   }
 });
 
+test('隠し補助列が全試合ぶんの勝者・敗者を同一シートへ写す', () => {
+  for (const n of [4, 8, 16]) {
+    const t = buildFullPlacement({ teams: n });
+    const g = layoutBracketSheet(t);
+    const helpers = [...g.cells.values()].filter((c) => c.style.helper && c.row > 1);
+    assert.equal(helpers.length, t.matches.length * 2, `${n}チーム`);
+    for (const c of helpers) {
+      assert.match(String(c.value), /^='試合管理'!\$[EF]\$\d+$/, `${c.row},${c.col}`);
+    }
+  }
+});
+
 test('ブラケット図のセルが試合管理を参照する生きた数式になる', () => {
   const g = layoutBracketSheet(buildFullPlacement({ teams: 8 }));
-  const live = [...g.cells.values()].filter((c) => String(c.value).includes("'試合管理'!"));
+  const live = [...g.cells.values()]
+    .filter((c) => !c.style.helper && String(c.value).includes("'試合管理'!"));
   // 進出チーム4×2グループ + 準決勝勝者2×2 + 決勝1×2 + 順位表8 + 下位決定戦の左右2×2
   assert.ok(live.length >= 20, `生きた数式が少なすぎる: ${live.length}`);
   for (const c of live) {

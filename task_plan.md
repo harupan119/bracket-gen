@@ -43,10 +43,11 @@ Google Sheets を生成する仕組みを作る。サークル内で代々引き
 - **Status:** complete
 
 ### Phase 4: 条件付き書式と自動進行
-- [ ] 試合管理タブの依存関係数式を生成する
-- [ ] 勝者セル・結果セル・勝ち上がり経路の条件付き書式を生成する
-- [ ] 結果を入力して `effectiveFormat` で着色を確認する
-- **Status:** not started
+- [x] 試合管理タブの依存関係数式を生成する
+- [x] 勝者セル・結果セル・勝ち上がり経路の条件付き書式を生成する
+- [x] 同一シート内の隠し補助列を置き、条件付き書式がそこを参照するようにする
+- [x] 結果を入力して `effectiveFormat` で着色を確認する
+- **Status:** complete
 
 ### Phase 5: Apps Script化と配布
 - [ ] esbuild で core を `apps-script/core.bundle.gs` へバンドルする
@@ -80,3 +81,5 @@ Google Sheets を生成する仕組みを作る。サークル内で代々引き
 | 未対応の `scoring` が生成の入口を素通りし、レイアウト生成まで遅れて落ちた | 1 | `buildTournament` で `getScoring` を呼び、入口で検証する |
 | 実シートで `2-1` の勝者が右チームになった。生値は日付シリアル `46054` | 1 | 結果セルに `numberFormat: TEXT` を指定。ローカルテストでは検出不能で、実適用でのみ露見した |
 | 最終順位表のチーム名列が空のまま、ブラケット図も静的テキストだった | 1 | `liveRefFormula` / `controlCell` を共有ヘルパにして、両方を試合管理参照の数式に置換 |
+| 条件付き書式の適用が `Invalid ConditionValue.userEnteredValue` で全拒否 | 1 | Sheetsは条件付き書式の数式に他シート参照を許さない。同一シートに隠し補助列 H:I を置いて参照先を局所化 |
+| `championOf` タグが3つ付くはずが1つだった | 1 | 置換文字列のエスケープ不一致。行を特定して直接編集 |

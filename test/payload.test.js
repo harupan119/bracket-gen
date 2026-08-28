@@ -23,8 +23,12 @@ test('全リクエストが実在するシートIDを指す', () => {
     const ids = new Set(p.create.sheets.map((s) => s.properties.sheetId));
     for (const r of p.requests) {
       const body = r[Object.keys(r)[0]];
-      const id = body.range?.sheetId;
-      assert.ok(ids.has(id), `${teams}チーム: 未知のsheetId ${id}`);
+      // range を1つ持つ形と、rule.ranges を複数持つ形（条件付き書式）の両方がある
+      const targets = body.range ? [body.range] : (body.rule?.ranges ?? []);
+      assert.ok(targets.length > 0, `${teams}チーム: 範囲を持たないリクエスト ${Object.keys(r)[0]}`);
+      for (const g of targets) {
+        assert.ok(ids.has(g.sheetId), `${teams}チーム: 未知のsheetId ${g.sheetId}`);
+      }
     }
   }
 });
@@ -35,13 +39,11 @@ test('書き込み範囲がシートの行数・列数に収まる', () => {
     const dims = new Map(p.create.sheets.map((s) => [s.properties.sheetId, s.properties.gridProperties]));
     for (const r of p.requests) {
       const body = r[Object.keys(r)[0]];
-      if (!body.range) continue;
-      const d = dims.get(body.range.sheetId);
-      if (body.range.endRowIndex != null) {
-        assert.ok(body.range.endRowIndex <= d.rowCount, `${teams}チーム: 行あふれ`);
-      }
-      if (body.range.endColumnIndex != null) {
-        assert.ok(body.range.endColumnIndex <= d.columnCount, `${teams}チーム: 列あふれ`);
+      const targets = body.range ? [body.range] : (body.rule?.ranges ?? []);
+      for (const g of targets) {
+        const d = dims.get(g.sheetId);
+        if (g.endRowIndex != null) assert.ok(g.endRowIndex <= d.rowCount, `${teams}チーム: 行あふれ`);
+        if (g.endColumnIndex != null) assert.ok(g.endColumnIndex <= d.columnCount, `${teams}チーム: 列あふれ`);
       }
     }
   }
