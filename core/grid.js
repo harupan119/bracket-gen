@@ -7,6 +7,7 @@ export class Grid {
     this.name = name;
     this.cells = new Map();   // "r,c" -> { row, col, value, style }
     this.merges = [];         // { r1, c1, r2, c2 }
+    this.borders = [];        // { r1, c1, r2, c2, side } side: 'bottom' | 'left'
     this.columns = new Map(); // col -> width
   }
 
@@ -47,6 +48,12 @@ export class Grid {
       }
     }
     this.merges.push(box);
+    return this;
+  }
+
+  /** 範囲の片側に罫線を引く。ブラケットの枝を描くのに使う。 */
+  border(r1, c1, r2, c2, side) {
+    this.borders.push({ r1, c1, r2, c2, side });
     return this;
   }
 

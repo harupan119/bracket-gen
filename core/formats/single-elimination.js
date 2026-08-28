@@ -32,12 +32,17 @@ export function buildSingleElimination({ teams, thirdPlace = true }) {
     s <= teams ? { type: 'team', index: s - 1, label: teamLabel(s - 1) } : BYE
   );
   let roundNo = 1;
+  // ブラケット図を描くために、各ラウンドのスロット列をそのまま保存する。
+  // 不戦勝の枠は BYE のまま残すので、常に 2^k 個の規則的な構造になり、
+  // 座標を閉じた式で計算できる。
+  const levels = [cur.slice()];
   while (cur.length > 1) {
     const next = [];
     for (let i = 0; i < cur.length; i += 2) {
       next.push(play(cur[i], cur[i + 1], { roundNo }));
     }
     cur = next;
+    levels.push(cur.slice());
     roundNo += 1;
   }
   const rounds = roundNo - 1;
@@ -104,6 +109,11 @@ export function buildSingleElimination({ teams, thirdPlace = true }) {
   return {
     format: 'single-elimination',
     teams,
+    tree: {
+      size,
+      levels: levels.map((lv) => lv.map((r) => (isBye(r) ? null : resolve(r)))),
+      title: '本戦ブラケット'
+    },
     teamLabels: Array.from({ length: teams }, (_, i) => teamLabel(i)),
     rounds,
     placements: thirdMatch ? 4 : 2,

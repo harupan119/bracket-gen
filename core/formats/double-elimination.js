@@ -40,6 +40,8 @@ export function buildDoubleElimination({ teams, bracketReset = true }) {
   );
   const wbLosers = [];
   let wr = 1;
+  // 勝者側のスロット列を保存する。敗者側は木構造にならないのでリストで描く。
+  const levels = [cur.slice()];
   while (cur.length > 1) {
     const next = [], losers = [];
     for (let i = 0; i < cur.length; i += 2) {
@@ -49,6 +51,7 @@ export function buildDoubleElimination({ teams, bracketReset = true }) {
     }
     wbLosers.push(losers);
     cur = next;
+    levels.push(cur.slice());
     wr += 1;
   }
   const wbChampion = cur[0];
@@ -147,6 +150,11 @@ export function buildDoubleElimination({ teams, bracketReset = true }) {
   return {
     format: 'double-elimination',
     teams,
+    tree: {
+      size,
+      levels: levels.map((lv) => lv.map((r) => (isBye(r) ? null : resolve(r)))),
+      title: '勝者側ブラケット'
+    },
     teamLabels: Array.from({ length: teams }, (_, i) => teamLabel(i)),
     rounds: wbRounds,
     placements: 3,

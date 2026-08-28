@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildFullPlacement } from '../core/index.js';
+import { buildFullPlacement, buildTournament } from '../core/index.js';
 import { layoutBracketSheet, bracketCell, terminalGroups } from '../core/layout.js';
 import { Grid, a1 } from '../core/grid.js';
 
@@ -115,5 +115,48 @@ test('ブラケット図のセルが試合管理を参照する生きた数式�
   assert.ok(live.length >= 20, `生きた数式が少なすぎる: ${live.length}`);
   for (const c of live) {
     assert.match(String(c.value), /^=IF\(/, `${c.row},${c.col}`);
+  }
+});
+
+test('ツリーを持つ形式はブラケット図として描かれる', () => {
+  for (const format of ['single-elimination', 'double-elimination']) {
+    for (const teams of [4, 8, 10, 16]) {
+      const t = buildTournament({ format, teams, courts: 2, scoring: 'win-loss' });
+      assert.ok(t.tree, `${format} ${teams}: tree が無い`);
+      const g = layoutBracketSheet(t);
+      // 各ラウンドのスロットが式どおりの位置に置かれている
+      const base = [...g.cells.values()].find((c) => String(c.value).startsWith('■'))?.row + 1;
+      assert.ok(base > 0);
+      const filled = t.tree.levels[0].filter(Boolean).length;
+      assert.equal(filled, teams, `${format} ${teams}: 1列目に並ぶチーム数`);
+      assert.ok(g.borders.length > 0, `${format} ${teams}: 枝の罫線が無い`);
+    }
+  }
+});
+
+test('枝の罫線が実物と同じ組み方になる（8チーム・シングル）', () => {
+  const t = buildTournament({ format: 'single-elimination', teams: 8, courts: 2, scoring: 'win-loss' });
+  const g = layoutBracketSheet(t);
+  const key = (b) => `${a1(b.r1, b.c1)}:${a1(b.r2, b.c2)}/${b.side}`;
+  const got = new Set(g.borders.map(key));
+  // 1試合目: 上下のチーム名に下線、連結列に縦線、親へ横線
+  for (const expected of ['B6:B6/bottom', 'B8:B8/bottom', 'C7:C8/left', 'C7:C7/bottom']) {
+    assert.ok(got.has(expected), `${expected} が無い`);
+  }
+  // 準決勝の縦線は倍の高さになる
+  assert.ok(got.has('E8:E11/left'), '準決勝の縦線');
+  // 優勝セルにも下線が付く
+  assert.ok(got.has('H13:H13/bottom'), '優勝セルの下線');
+});
+
+test('補助列はブラケットの右端より外に置かれる', () => {
+  for (const teams of [4, 8, 16]) {
+    const t = buildTournament({ format: 'single-elimination', teams, courts: 2 });
+    const g = layoutBracketSheet(t);
+    const helpers = [...g.cells.values()].filter((c) => c.style.helper);
+    const visible = [...g.cells.values()].filter((c) => !c.style.helper);
+    const maxVisible = Math.max(...visible.map((c) => c.col));
+    const minHelper = Math.min(...helpers.map((c) => c.col));
+    assert.ok(minHelper > maxVisible, `${teams}チーム: 補助列(${minHelper})が表示列(${maxVisible})と衝突`);
   }
 });

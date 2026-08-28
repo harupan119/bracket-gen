@@ -40,39 +40,60 @@ export function bracketHeight(entrants) {
  */
 // 条件付き書式の数式は他シートを参照できないため、勝者・敗者を同一シートへ写す隠し列を置く。
 // INDIRECT でも回避できるが、再計算が遅れて色が残る既知の問題があるので使わない。
-export const HELPER_COL = { winner: 8, loser: 9 };
 export const helperRow = (matchIndex) => matchIndex + 2;
+
+/** ブラケット図の右端の列。ツリーが無い形式（完全順位決定）は既定の6列構成。 */
+export function lastBracketCol(tournament) {
+  return tournament.tree ? 2 + 2 * (tournament.tree.levels.length - 1) : 6;
+}
+
+/** 補助列はブラケットの右端より外に置く。図の列数はチーム数で変わるので固定できない。 */
+export function helperCols(tournament) {
+  const last = lastBracketCol(tournament);
+  return { winner: last + 2, loser: last + 3 };
+}
 
 export function helperCell(tournament, matchId, kind) {
   const i = tournament.matches.findIndex((m) => m.id === matchId);
-  return `$${a1(1, HELPER_COL[kind]).replace(/\d+$/, '')}$${helperRow(i)}`;
+  const col = helperCols(tournament)[kind];
+  return `$${a1(1, col).replace(/\d+$/, '')}$${helperRow(i)}`;
 }
 
 export function layoutBracketSheet(tournament) {
   const g = new Grid('トーナメント表');
   for (const { col, width } of COLUMNS) g.setColumnWidth(col, width);
 
-  // 隠し補助列（H:I）。表示はしないが、条件付き書式がここを見る。
-  g.set(1, HELPER_COL.winner, '（内部）勝者', { helper: true });
-  g.set(1, HELPER_COL.loser, '（内部）敗者', { helper: true });
+  // 隠し補助列。表示はしないが、条件付き書式がここを見る。
+  const hc = helperCols(tournament);
+  g.set(1, hc.winner, '（内部）勝者', { helper: true });
+  g.set(1, hc.loser, '（内部）敗者', { helper: true });
   tournament.matches.forEach((m, i) => {
-    g.set(helperRow(i), HELPER_COL.winner, `=${controlCell(tournament, m.id, 'winner')}`, { helper: true });
-    g.set(helperRow(i), HELPER_COL.loser, `=${controlCell(tournament, m.id, 'loser')}`, { helper: true });
+    g.set(helperRow(i), hc.winner, `=${controlCell(tournament, m.id, 'winner')}`, { helper: true });
+    g.set(helperRow(i), hc.loser, `=${controlCell(tournament, m.id, 'loser')}`, { helper: true });
   });
+  // ブラケット図の列幅（偶数列＝チーム名、奇数列＝連結線）
+  for (let c = 2; c <= lastBracketCol(tournament); c++) {
+    g.setColumnWidth(c, c % 2 === 0 ? 18 : 4);
+  }
 
   let row = 1;
   g.set(row, 1, tournament.title || `トーナメント表（${tournament.teams}チーム・全${tournament.matches.length}試合）`, { bold: true, size: 14 });
   row += 1;
-  g.set(row, 1, `全${tournament.matches.length}試合／各チーム${tournament.rounds}試合／1位〜${tournament.placements}位まで確定`);
+  g.set(row, 1, subtitle(tournament));
   row += 2;
 
-  // 完全順位決定では最終2ラウンドをブラケット図にする。それ以外は試合リスト。
-  const groups = terminalGroups(tournament);
-  const inBracket = new Set(
-    groups.flatMap((g) => [...g.semis.map((s) => s.id), g.final.id, g.consolation.id])
-  );
+  // ツリーを持つ形式（シングル／ダブルの勝者側）はブラケット図として描く。
+  // 完全順位決定はツリーではなく再帰的な二分割なので、終端グループ方式で描く。
+  const inBracket = new Set();
+  if (tournament.tree) {
+    row = renderTree(g, tournament, row, inBracket);
+  }
+  const groups = tournament.tree ? [] : terminalGroups(tournament);
+  for (const gr of groups) {
+    for (const id of [...gr.semis.map((s) => s.id), gr.final.id, gr.consolation.id]) inBracket.add(id);
+  }
   // 勝者側と敗者側でラウンド番号が衝突するため、区切りには系統も含める
-  const keyOf = (m) => `${m.bracket ?? '-'}/${m.roundNo}`;
+  const keyOf = (m) => `${m.bracket ?? '-'}/${m.roundNo}/${m.roundName}`;
   const listKeys = [];
   for (const m of tournament.matches) {
     if (inBracket.has(m.id)) continue;
@@ -81,7 +102,9 @@ export function layoutBracketSheet(tournament) {
 
   for (const key of listKeys) {
     const ms = tournament.matches.filter((m) => !inBracket.has(m.id) && keyOf(m) === key);
-    g.set(row, 1, `■ ${ms[0].roundName}（${ms[0].label}〜${ms[ms.length - 1].label}）${ms[0].roundNo === 1 && ms[0].bracket !== 'L' ? '　※ここだけ抽選で決める' : ''}`, { bold: true });
+    const span = ms.length > 1 ? `（${ms[0].label}〜${ms[ms.length - 1].label}）` : '';
+    const note = ms[0].roundNo === 1 && ms[0].bracket !== 'L' && !tournament.tree ? '　※ここだけ抽選で決める' : '';
+    g.set(row, 1, `■ ${ms[0].roundName}${span}${note}`, { bold: true });
     row += 1;
     g.set(row, 1, '試合').set(row, 2, '対戦カード').set(row, 6, '行き先');
     row += 1;
@@ -118,6 +141,7 @@ export function layoutBracketSheet(tournament) {
         winnerOf: group.final.id,
       });
     }
+    drawBranches(g, base, [group.entrants.length, group.semis.length, 1]);
     {
       const { row: r, col: c } = bracketCell(base, 2, 0);
       g.set(r, c, `=IF(${controlCell(tournament, group.final.id, 'winner')}="","★ ${group.final.decides.winner}位","★ "&${controlCell(tournament, group.final.id, 'winner')})`, { championOf: group.final.id });
@@ -193,4 +217,85 @@ export function terminalGroups(tournament) {
     });
   }
   return groups.sort((a, b) => a.semis[0].rankStart - b.semis[0].rankStart);
+}
+
+/**
+ * ブラケットの枝を引く。チーム名セルの下線が横線、連結列の左罫線が縦線。
+ * levelSizes は各ラウンドのスロット数（例: 4チームのブラケットなら [4, 2, 1]）。
+ * filled(j, i) が false のスロットは不戦勝なので下線を引かない。
+ */
+function drawBranches(g, base, levelSizes, filled) {
+  const has = filled ?? (() => true);
+  for (let j = 0; j < levelSizes.length - 1; j++) {
+    for (let p = 0; p < levelSizes[j + 1]; p++) {
+      if (!has(j + 1, p)) continue;
+      const top = bracketCell(base, j, p * 2);
+      const bottom = bracketCell(base, j, p * 2 + 1);
+      const parent = bracketCell(base, j + 1, p);
+      const conn = top.col + 1;
+      if (has(j, p * 2)) g.border(top.row, top.col, top.row, top.col, 'bottom');
+      if (has(j, p * 2 + 1)) g.border(bottom.row, bottom.col, bottom.row, bottom.col, 'bottom');
+      g.border(top.row + 1, conn, bottom.row, conn, 'left');
+      g.border(parent.row, conn, parent.row, conn, 'bottom');
+    }
+  }
+  const last = levelSizes.length - 1;
+  if (has(last, 0)) {
+    const root = bracketCell(base, last, 0);
+    g.border(root.row, root.col, root.row, root.col, 'bottom');
+  }
+}
+
+function subtitle(t) {
+  const total = `全${t.matches.length}試合`;
+  const rank = `1位〜${t.placements}位まで確定`;
+  if (t.format === 'full-placement') {
+    return `${total}／各チーム${t.rounds}試合／${rank}`;
+  }
+  if (t.format === 'double-elimination') {
+    return `${total}／2敗で敗退／${rank}`;
+  }
+  return `${total}／1敗で敗退／${rank}`;
+}
+
+/**
+ * スロット構造をブラケット図として描く。
+ *
+ *   行 = base + 2^(j+1)·i + 2^j 、列 = 2 + 2j   （j はラウンド、i はその中の位置）
+ *
+ * 不戦勝の枠は空欄のまま残す。枠を詰めるとこの式が成立しなくなり、
+ * チーム数ごとに座標を作り直すことになるため。
+ */
+function renderTree(g, tournament, startRow, inBracket) {
+  const { levels } = tournament.tree;
+  let row = startRow;
+  g.set(row, 1, `■ ${tournament.tree.title ?? '本戦'}`, { bold: true });
+  row += 1;
+  const base = row;
+
+  drawBranches(
+    g,
+    base,
+    levels.map((lv) => lv.length),
+    (j, i) => Boolean(levels[j] && levels[j][i])
+  );
+
+  levels.forEach((level, j) => {
+    level.forEach((ref, i) => {
+      if (!ref) return; // 不戦勝の枠
+      const { row: r, col: c } = bracketCell(base, j, i);
+      // このスロットの勝ち上がり先は、ひとつ上のラウンドの対応スロット
+      const parent = levels[j + 1] ? levels[j + 1][Math.floor(i / 2)] : null;
+      const style =
+        parent && parent.type === 'winner'
+          ? { winnerOf: parent.match }
+          : j === levels.length - 1 && ref.type === 'winner'
+            ? { championOf: ref.match }
+            : {};
+      g.set(r, c, liveRefFormula(tournament, ref), style);
+      if (ref.type === 'winner') inBracket.add(ref.match);
+    });
+  });
+
+  return base + bracketHeight(levels[0].length) + 1;
 }

@@ -1,4 +1,4 @@
-import { layoutBracketSheet, HELPER_COL } from './layout.js';
+import { layoutBracketSheet, helperCols } from './layout.js';
 import { layoutProgressSheet, layoutMobileSheet, layoutControlSheet, TABS } from './sheets.js';
 import { COLORS, toRgb } from './palette.js';
 import { buildConditionalFormatRules } from './formatting.js';
@@ -47,6 +47,18 @@ export function buildSpreadsheetPayload(tournament) {
         },
       });
     }
+    for (const b of grid.borders) {
+      requests.push({
+        updateBorders: {
+          range: {
+            sheetId,
+            startRowIndex: b.r1 - 1, endRowIndex: b.r2,
+            startColumnIndex: b.c1 - 1, endColumnIndex: b.c2,
+          },
+          [b.side]: { style: 'SOLID', color: toRgb(COLORS.line) },
+        },
+      });
+    }
     for (const m of grid.merges) {
       requests.push({
         mergeCells: {
@@ -59,7 +71,8 @@ export function buildSpreadsheetPayload(tournament) {
   }
 
   // 補助列は運営に見せない
-  for (const col of [HELPER_COL.winner, HELPER_COL.loser]) {
+  const hc = helperCols(tournament);
+  for (const col of [hc.winner, hc.loser]) {
     requests.push({
       updateDimensionProperties: {
         range: { sheetId: 0, dimension: 'COLUMNS', startIndex: col - 1, endIndex: col },

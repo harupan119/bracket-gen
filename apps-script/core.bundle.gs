@@ -199,6 +199,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     );
     const wbLosers = [];
     let wr = 1;
+    const levels = [cur.slice()];
     while (cur.length > 1) {
       const next = [], losers = [];
       for (let i = 0; i < cur.length; i += 2) {
@@ -208,6 +209,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       }
       wbLosers.push(losers);
       cur = next;
+      levels.push(cur.slice());
       wr += 1;
     }
     const wbChampion = cur[0];
@@ -291,6 +293,11 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     return {
       format: "double-elimination",
       teams,
+      tree: {
+        size,
+        levels: levels.map((lv) => lv.map((r) => isBye(r) ? null : resolve(r))),
+        title: "\u52DD\u8005\u5074\u30D6\u30E9\u30B1\u30C3\u30C8"
+      },
       teamLabels: Array.from({ length: teams }, (_, i) => teamLabel(i)),
       rounds: wbRounds,
       placements: 3,
@@ -336,12 +343,14 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       (s) => s <= teams ? { type: "team", index: s - 1, label: teamLabel(s - 1) } : BYE2
     );
     let roundNo = 1;
+    const levels = [cur.slice()];
     while (cur.length > 1) {
       const next = [];
       for (let i = 0; i < cur.length; i += 2) {
         next.push(play(cur[i], cur[i + 1], { roundNo }));
       }
       cur = next;
+      levels.push(cur.slice());
       roundNo += 1;
     }
     const rounds = roundNo - 1;
@@ -390,6 +399,11 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     return {
       format: "single-elimination",
       teams,
+      tree: {
+        size,
+        levels: levels.map((lv) => lv.map((r) => isBye2(r) ? null : resolve(r))),
+        title: "\u672C\u6226\u30D6\u30E9\u30B1\u30C3\u30C8"
+      },
       teamLabels: Array.from({ length: teams }, (_, i) => teamLabel(i)),
       rounds,
       placements: thirdMatch ? 4 : 2,
@@ -500,6 +514,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       this.name = name;
       this.cells = /* @__PURE__ */ new Map();
       this.merges = [];
+      this.borders = [];
       this.columns = /* @__PURE__ */ new Map();
     }
     key(row, col) {
@@ -535,6 +550,11 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         }
       }
       this.merges.push(box);
+      return this;
+    }
+    /** 範囲の片側に罫線を引く。ブラケットの枝を描くのに使う。 */
+    border(r1, c1, r2, c2, side) {
+      this.borders.push({ r1, c1, r2, c2, side });
       return this;
     }
     setColumnWidth(col, width) {
@@ -703,33 +723,48 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
   function bracketHeight(entrants) {
     return entrants * 2;
   }
-  var HELPER_COL = { winner: 8, loser: 9 };
   var helperRow = (matchIndex2) => matchIndex2 + 2;
+  function lastBracketCol(tournament) {
+    return tournament.tree ? 2 + 2 * (tournament.tree.levels.length - 1) : 6;
+  }
+  function helperCols(tournament) {
+    const last = lastBracketCol(tournament);
+    return { winner: last + 2, loser: last + 3 };
+  }
   function helperCell(tournament, matchId, kind) {
     const i = tournament.matches.findIndex((m) => m.id === matchId);
-    return `$${a1(1, HELPER_COL[kind]).replace(/\d+$/, "")}$${helperRow(i)}`;
+    const col = helperCols(tournament)[kind];
+    return `$${a1(1, col).replace(/\d+$/, "")}$${helperRow(i)}`;
   }
   function layoutBracketSheet(tournament) {
     const g = new Grid("\u30C8\u30FC\u30CA\u30E1\u30F3\u30C8\u8868");
     for (const { col, width } of COLUMNS) g.setColumnWidth(col, width);
-    g.set(1, HELPER_COL.winner, "\uFF08\u5185\u90E8\uFF09\u52DD\u8005", { helper: true });
-    g.set(1, HELPER_COL.loser, "\uFF08\u5185\u90E8\uFF09\u6557\u8005", { helper: true });
+    const hc = helperCols(tournament);
+    g.set(1, hc.winner, "\uFF08\u5185\u90E8\uFF09\u52DD\u8005", { helper: true });
+    g.set(1, hc.loser, "\uFF08\u5185\u90E8\uFF09\u6557\u8005", { helper: true });
     tournament.matches.forEach((m, i) => {
-      g.set(helperRow(i), HELPER_COL.winner, `=${controlCell(tournament, m.id, "winner")}`, { helper: true });
-      g.set(helperRow(i), HELPER_COL.loser, `=${controlCell(tournament, m.id, "loser")}`, { helper: true });
+      g.set(helperRow(i), hc.winner, `=${controlCell(tournament, m.id, "winner")}`, { helper: true });
+      g.set(helperRow(i), hc.loser, `=${controlCell(tournament, m.id, "loser")}`, { helper: true });
     });
+    for (let c = 2; c <= lastBracketCol(tournament); c++) {
+      g.setColumnWidth(c, c % 2 === 0 ? 18 : 4);
+    }
     let row = 1;
     g.set(row, 1, tournament.title || `\u30C8\u30FC\u30CA\u30E1\u30F3\u30C8\u8868\uFF08${tournament.teams}\u30C1\u30FC\u30E0\u30FB\u5168${tournament.matches.length}\u8A66\u5408\uFF09`, { bold: true, size: 14 });
     row += 1;
-    g.set(row, 1, `\u5168${tournament.matches.length}\u8A66\u5408\uFF0F\u5404\u30C1\u30FC\u30E0${tournament.rounds}\u8A66\u5408\uFF0F1\u4F4D\u301C${tournament.placements}\u4F4D\u307E\u3067\u78BA\u5B9A`);
+    g.set(row, 1, subtitle(tournament));
     row += 2;
-    const groups = terminalGroups(tournament);
-    const inBracket = new Set(
-      groups.flatMap((g2) => [...g2.semis.map((s) => s.id), g2.final.id, g2.consolation.id])
-    );
+    const inBracket = /* @__PURE__ */ new Set();
+    if (tournament.tree) {
+      row = renderTree(g, tournament, row, inBracket);
+    }
+    const groups = tournament.tree ? [] : terminalGroups(tournament);
+    for (const gr of groups) {
+      for (const id of [...gr.semis.map((s) => s.id), gr.final.id, gr.consolation.id]) inBracket.add(id);
+    }
     const keyOf = (m) => {
       var _a;
-      return `${(_a = m.bracket) != null ? _a : "-"}/${m.roundNo}`;
+      return `${(_a = m.bracket) != null ? _a : "-"}/${m.roundNo}/${m.roundName}`;
     };
     const listKeys = [];
     for (const m of tournament.matches) {
@@ -738,7 +773,9 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     }
     for (const key of listKeys) {
       const ms = tournament.matches.filter((m) => !inBracket.has(m.id) && keyOf(m) === key);
-      g.set(row, 1, `\u25A0 ${ms[0].roundName}\uFF08${ms[0].label}\u301C${ms[ms.length - 1].label}\uFF09${ms[0].roundNo === 1 && ms[0].bracket !== "L" ? "\u3000\u203B\u3053\u3053\u3060\u3051\u62BD\u9078\u3067\u6C7A\u3081\u308B" : ""}`, { bold: true });
+      const span = ms.length > 1 ? `\uFF08${ms[0].label}\u301C${ms[ms.length - 1].label}\uFF09` : "";
+      const note = ms[0].roundNo === 1 && ms[0].bracket !== "L" && !tournament.tree ? "\u3000\u203B\u3053\u3053\u3060\u3051\u62BD\u9078\u3067\u6C7A\u3081\u308B" : "";
+      g.set(row, 1, `\u25A0 ${ms[0].roundName}${span}${note}`, { bold: true });
       row += 1;
       g.set(row, 1, "\u8A66\u5408").set(row, 2, "\u5BFE\u6226\u30AB\u30FC\u30C9").set(row, 6, "\u884C\u304D\u5148");
       row += 1;
@@ -770,6 +807,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
           winnerOf: group.final.id
         });
       }
+      drawBranches(g, base, [group.entrants.length, group.semis.length, 1]);
       {
         const { row: r, col: c } = bracketCell(base, 2, 0);
         g.set(r, c, `=IF(${controlCell(tournament, group.final.id, "winner")}="","\u2605 ${group.final.decides.winner}\u4F4D","\u2605 "&${controlCell(tournament, group.final.id, "winner")})`, { championOf: group.final.id });
@@ -834,9 +872,68 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     }
     return groups.sort((a, b) => a.semis[0].rankStart - b.semis[0].rankStart);
   }
+  function drawBranches(g, base, levelSizes, filled) {
+    const has = filled != null ? filled : () => true;
+    for (let j = 0; j < levelSizes.length - 1; j++) {
+      for (let p = 0; p < levelSizes[j + 1]; p++) {
+        if (!has(j + 1, p)) continue;
+        const top = bracketCell(base, j, p * 2);
+        const bottom = bracketCell(base, j, p * 2 + 1);
+        const parent = bracketCell(base, j + 1, p);
+        const conn = top.col + 1;
+        if (has(j, p * 2)) g.border(top.row, top.col, top.row, top.col, "bottom");
+        if (has(j, p * 2 + 1)) g.border(bottom.row, bottom.col, bottom.row, bottom.col, "bottom");
+        g.border(top.row + 1, conn, bottom.row, conn, "left");
+        g.border(parent.row, conn, parent.row, conn, "bottom");
+      }
+    }
+    const last = levelSizes.length - 1;
+    if (has(last, 0)) {
+      const root = bracketCell(base, last, 0);
+      g.border(root.row, root.col, root.row, root.col, "bottom");
+    }
+  }
+  function subtitle(t) {
+    const total = `\u5168${t.matches.length}\u8A66\u5408`;
+    const rank = `1\u4F4D\u301C${t.placements}\u4F4D\u307E\u3067\u78BA\u5B9A`;
+    if (t.format === "full-placement") {
+      return `${total}\uFF0F\u5404\u30C1\u30FC\u30E0${t.rounds}\u8A66\u5408\uFF0F${rank}`;
+    }
+    if (t.format === "double-elimination") {
+      return `${total}\uFF0F2\u6557\u3067\u6557\u9000\uFF0F${rank}`;
+    }
+    return `${total}\uFF0F1\u6557\u3067\u6557\u9000\uFF0F${rank}`;
+  }
+  function renderTree(g, tournament, startRow, inBracket) {
+    var _a;
+    const { levels } = tournament.tree;
+    let row = startRow;
+    g.set(row, 1, `\u25A0 ${(_a = tournament.tree.title) != null ? _a : "\u672C\u6226"}`, { bold: true });
+    row += 1;
+    const base = row;
+    drawBranches(
+      g,
+      base,
+      levels.map((lv) => lv.length),
+      (j, i) => Boolean(levels[j] && levels[j][i])
+    );
+    levels.forEach((level, j) => {
+      level.forEach((ref, i) => {
+        if (!ref) return;
+        const { row: r, col: c } = bracketCell(base, j, i);
+        const parent = levels[j + 1] ? levels[j + 1][Math.floor(i / 2)] : null;
+        const style = parent && parent.type === "winner" ? { winnerOf: parent.match } : j === levels.length - 1 && ref.type === "winner" ? { championOf: ref.match } : {};
+        g.set(r, c, liveRefFormula(tournament, ref), style);
+        if (ref.type === "winner") inBracket.add(ref.match);
+      });
+    });
+    return base + bracketHeight(levels[0].length) + 1;
+  }
 
   // core/palette.js
   var COLORS = {
+    line: "#202124",
+    // ブラケットの枝
     header: "#F1F3F4",
     winner: "#D93025",
     // 勝者セル・勝ち上がり経路
@@ -954,6 +1051,20 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
           }
         });
       }
+      for (const b of grid.borders) {
+        requests.push({
+          updateBorders: {
+            range: {
+              sheetId,
+              startRowIndex: b.r1 - 1,
+              endRowIndex: b.r2,
+              startColumnIndex: b.c1 - 1,
+              endColumnIndex: b.c2
+            },
+            [b.side]: { style: "SOLID", color: toRgb(COLORS.line) }
+          }
+        });
+      }
       for (const m of grid.merges) {
         requests.push({
           mergeCells: {
@@ -964,7 +1075,8 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       }
       requests.push(...validationRequests(sheetId, grid));
     }
-    for (const col of [HELPER_COL.winner, HELPER_COL.loser]) {
+    const hc = helperCols(tournament);
+    for (const col of [hc.winner, hc.loser]) {
       requests.push({
         updateDimensionProperties: {
           range: { sheetId: 0, dimension: "COLUMNS", startIndex: col - 1, endIndex: col },
