@@ -43,7 +43,7 @@ test('3位決定戦を入れると1位〜4位が重複なく決まる', () => {
 
 test('3位決定戦は準決勝の敗者同士で行われる', () => {
   const t = buildSingleElimination({ teams: 8 });
-  const third = t.matches.find((m) => m.label === '3位決定戦');
+  const third = t.matches.find((m) => m.roundName === '3位決定戦');
   const semis = t.matches.filter((m) => m.roundName === '準決勝');
   assert.equal(semis.length, 2);
   assert.deepEqual(
@@ -52,11 +52,14 @@ test('3位決定戦は準決勝の敗者同士で行われる', () => {
   );
 });
 
-test('3位決定戦に丸数字を使わず、他の試合の番号が詰まっている', () => {
+test('全試合が丸数字で連番になる（試合番号の列に収めるため）', () => {
+  // 「3位決定戦」のような長いラベルを入れると、幅9の列からはみ出して切れる。
   const t = buildSingleElimination({ teams: 10 });
-  const numbered = t.matches.filter((m) => m.label !== '3位決定戦');
-  assert.deepEqual(numbered.map((m) => m.no), [...Array(numbered.length).keys()].map((i) => i + 1));
-  assert.equal(new Set(numbered.map((m) => m.label)).size, numbered.length, '丸数字の重複');
+  assert.deepEqual(t.matches.map((m) => m.no), [...Array(t.matches.length).keys()].map((i) => i + 1));
+  assert.equal(new Set(t.matches.map((m) => m.label)).size, t.matches.length, '丸数字の重複');
+  for (const m of t.matches) {
+    assert.ok([...m.label].length <= 3, `ラベルが長すぎる: ${m.label}`);
+  }
 });
 
 test('同じ枠に同じチームが2回出ない', () => {

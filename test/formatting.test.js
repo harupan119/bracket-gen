@@ -12,7 +12,7 @@ const rules = (t) =>
 test('チーム数に応じて条件付き書式が増える', () => {
   const counts = [4, 8, 16].map((teams) => rules(make({ teams })).length);
   assert.ok(counts[0] < counts[1] && counts[1] < counts[2], `単調増加でない: ${counts}`);
-  assert.equal(counts[1], 30, '8チームは30ルール');
+  assert.equal(counts[1], 38, '8チームは38ルール（うち8本が勝ち上がり経路）');
 });
 
 test('全ルールが実在シートIDの範囲を指す', () => {
@@ -65,5 +65,45 @@ test('スマホ用の結果列と勝者列に範囲ルールが1本ずつ付く'
   assert.deepEqual(cols, [2, 3], '結果列(C)と勝者列(D)');
   for (const r of mobile) {
     assert.equal(r.ranges[0].endRowIndex - r.ranges[0].startRowIndex, t.matches.length);
+  }
+});
+
+test('勝ち上がり経路が連結列に引かれる', () => {
+  // 条件付き書式は罫線に触れないので、枝線そのものは色を変えられない。
+  // 代わりに連結列（幅の狭い空セル）を勝者の色で塗り、マーカーでなぞったように見せる。
+  for (const format of ['single-elimination', 'double-elimination', 'full-placement']) {
+    const t = buildTournament({ format, teams: 8, courts: 2, scoring: 'win-loss' });
+    const rs = rules(t);
+    // 経路は連結列（奇数列）にかかる、複数行にまたがる範囲
+    const paths = rs.filter((r) => {
+      const g = r.ranges[0];
+      return g.sheetId === 0 && g.endColumnIndex - g.startColumnIndex === 1 && (g.startColumnIndex + 1) % 2 === 1;
+    });
+    assert.ok(paths.length > 0, `${format}: 経路のルールが無い`);
+    for (const r of paths) {
+      const g = r.ranges[0];
+      assert.equal(g.endColumnIndex - g.startColumnIndex, 1, '経路は1列ぶん');
+      assert.equal(r.booleanRule.condition.type, 'CUSTOM_FORMULA');
+      assert.doesNotMatch(r.booleanRule.condition.values[0].userEnteredValue, /!/, '他シート参照は使えない');
+    }
+  }
+});
+
+test('経路の本数がブラケットのスロット数と釣り合う', async () => {
+  const { layoutBracketSheet } = await import('../core/layout.js');
+  // 8チームなら 1回戦8 + 準決勝4 + 決勝2 = 14本
+  const cases = [
+    ['single-elimination', 8, 14],
+    ['full-placement', 8, 8],
+    ['double-elimination', 10, 19],
+  ];
+  for (const [format, teams, expected] of cases) {
+    const g = layoutBracketSheet(buildTournament({ format, teams, courts: 2, scoring: 'win-loss' }));
+    assert.equal(g.paths.length, expected, `${format} ${teams}チーム`);
+    for (const p of g.paths) {
+      // 敗者側の大ラウンドは親と子が同じ行なので、経路は1セル（横方向の区間）になる
+      assert.ok(p.r2 >= p.r1, `経路の範囲が逆転: ${p.r1}-${p.r2}`);
+      assert.ok(p.col % 2 === 1, '経路は連結列（奇数列）に引く');
+    }
   }
 });

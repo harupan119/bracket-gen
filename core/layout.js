@@ -3,7 +3,7 @@ import { liveRefFormula, controlCell } from './sheets.js';
 
 // 実物 8team_volleyball_base.xlsx と同じ列構成
 export const COLUMNS = [
-  { col: 1, width: 7 },   // A: 試合番号
+  { col: 1, width: 9 },   // A: 試合番号（決勝R のような3文字ラベルまで収める）
   { col: 2, width: 20 },  // B: 左チーム / ブラケット第1列
   { col: 3, width: 5 },   // C: vs / 連結線
   { col: 4, width: 20 },  // D: 右チーム / ブラケット第2列
@@ -148,10 +148,10 @@ export function layoutBracketSheet(tournament) {
     for (let i = 0; i < group.entrants.length; i++) {
       const { row: r, col: c } = bracketCell(base, 0, i);
       // このチームが進む先は、自分が入る準決勝
-      g.set(r, c, liveRefFormula(tournament, group.entrants[i]), {
-        role: 'team',
-        winnerOf: group.semis[Math.floor(i / 2)].id,
-      });
+      const nextId = group.semis[Math.floor(i / 2)].id;
+      g.set(r, c, liveRefFormula(tournament, group.entrants[i]), { role: 'team', winnerOf: nextId });
+      const up = bracketCell(base, 1, Math.floor(i / 2));
+      g.path(r, up.row, c + 1, a1(r, c), nextId);
     }
     for (let i = 0; i < group.semis.length; i++) {
       const { row: r, col: c } = bracketCell(base, 1, i);
@@ -351,6 +351,11 @@ function renderTree(g, tournament, startRow, inBracket) {
       else if (ref.type === 'winner') style.championOf = ref.match;
       g.set(r, c, liveRefFormula(tournament, ref), style);
       if (ref.type === 'winner') inBracket.add(ref.match);
+      // 勝ち上がったら、次のラウンドへ向かう連結列を塗ってマーカー線にする
+      if (style.winnerOf && levels[j + 1]) {
+        const up = bracketCell(base, j + 1, Math.floor(i / 2));
+        g.path(r, up.row, c + 1, a1(r, c), style.winnerOf);
+      }
     });
   });
 
@@ -403,6 +408,10 @@ function renderLoserTree(g, tournament, startRow, inBracket) {
       else if (ref.type === 'winner') style.championOf = ref.match;
       g.set(p.rows[i], p.col, liveRefFormula(tournament, ref), style);
       if (ref.type === 'winner') inBracket.add(ref.match);
+      if (style.winnerOf && parent) {
+        const idx = parent.level.kind === 'minor' ? Math.floor(i / 2) : i;
+        g.path(p.rows[i], parent.rows[idx], p.col + 1, a1(p.rows[i], p.col), style.winnerOf);
+      }
       // 横線。小ラウンドの合流は下で縦線もつなぐ
       g.border(p.rows[i], p.col, p.rows[i], p.col, 'bottom');
       // 大ラウンドは合流の縦線が無いので、前の列から横線でつなぐ

@@ -70,7 +70,9 @@ export function buildSingleElimination({ teams, thirdPlace = true }) {
   ordered.forEach((m, i) => {
     m.id = `M${i + 1}`;
     m.no = i + 1;
-    m.label = m.isThirdPlace ? '3位決定戦' : circled(i + 1);
+    // 試合番号の列は狭いので、ラベルは丸数字で統一する。
+    // 「3位決定戦」のような説明はラウンド名の側が持つ（実物も⑪のように番号を振っている）。
+    m.label = circled(i + 1);
     m.roundName = m.isThirdPlace
       ? '3位決定戦'
       : m === finalMatch
@@ -79,15 +81,6 @@ export function buildSingleElimination({ teams, thirdPlace = true }) {
           ? '準決勝'
           : `${m.roundNo}回戦`;
   });
-  // 3位決定戦に番号を振らないぶん、他の試合の丸数字を詰め直す
-  let n = 0;
-  for (const m of ordered) {
-    if (m.isThirdPlace) continue;
-    n += 1;
-    m.no = n;
-    m.label = circled(n);
-  }
-
   const resolve = (ref) =>
     ref.type === 'team'
       ? { type: 'team', index: ref.index, label: ref.label }

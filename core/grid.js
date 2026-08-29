@@ -8,6 +8,7 @@ export class Grid {
     this.cells = new Map();   // "r,c" -> { row, col, value, style }
     this.merges = [];         // { r1, c1, r2, c2 }
     this.borders = [];        // { r1, c1, r2, c2, side } side: 'bottom' | 'left'
+    this.paths = [];          // { r1, r2, col, cellRef, winnerOf } 勝ち上がり経路の塗り範囲
     this.columns = new Map(); // col -> width
   }
 
@@ -57,6 +58,15 @@ export class Grid {
   /** 範囲の片側に罫線を引く。ブラケットの枝を描くのに使う。 */
   border(r1, c1, r2, c2, side) {
     this.borders.push({ r1, c1, r2, c2, side });
+    return this;
+  }
+
+  /**
+   * 勝ち上がり経路。連結列のセルを勝者の色で塗ってマーカー線に見せる。
+   * 条件付き書式は罫線に触れないので、枝線そのものは動かせない。
+   */
+  path(r1, r2, col, cellRef, winnerOf) {
+    this.paths.push({ r1: Math.min(r1, r2), r2: Math.max(r1, r2), col, cellRef, winnerOf });
     return this;
   }
 

@@ -134,7 +134,7 @@ test('列幅が実物の実測値と一致する', () => {
     if (!d || d.range.sheetId !== 0 || d.properties.pixelSize == null) continue;
     widths.set(d.range.startIndex + 1, Math.round(d.properties.pixelSize / 7.5));
   }
-  assert.equal(widths.get(1), 7, '試合番号');
+  assert.equal(widths.get(1), 9, '試合番号');
   assert.equal(widths.get(2), 20, 'チーム名');
   assert.equal(widths.get(3), 5, '連結線');
   assert.equal(widths.get(6), 26, '説明');

@@ -49,6 +49,23 @@ export function buildConditionalFormatRules(tournament, grids, sheetIds) {
     }
   }
 
+  // 勝ち上がり経路。連結列を勝者と同じ色で塗り、マーカーでなぞったように見せる。
+  // 条件はセル本体と同じ（表示中のチームが次の試合にも勝ったか）。
+  for (const p of grids.bracket.paths ?? []) {
+    const w = helperCell(tournament, p.winnerOf, 'winner');
+    out.push(
+      rule(
+        [{
+          sheetId: sheetIds.bracket,
+          startRowIndex: p.r1 - 1, endRowIndex: p.r2,
+          startColumnIndex: p.col - 1, endColumnIndex: p.col,
+        }],
+        customFormula(`=AND(${w}<>"",${p.cellRef}=${w})`),
+        WINNER_FORMAT
+      )
+    );
+  }
+
   const n = tournament.matches.length;
   const mobileStart = 5;
 

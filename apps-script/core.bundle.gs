@@ -383,16 +383,9 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     ordered.forEach((m, i) => {
       m.id = `M${i + 1}`;
       m.no = i + 1;
-      m.label = m.isThirdPlace ? "3\u4F4D\u6C7A\u5B9A\u6226" : circled(i + 1);
+      m.label = circled(i + 1);
       m.roundName = m.isThirdPlace ? "3\u4F4D\u6C7A\u5B9A\u6226" : m === finalMatch ? "\u6C7A\u52DD" : m.roundNo === rounds - 1 ? "\u6E96\u6C7A\u52DD" : `${m.roundNo}\u56DE\u6226`;
     });
-    let n = 0;
-    for (const m of ordered) {
-      if (m.isThirdPlace) continue;
-      n += 1;
-      m.no = n;
-      m.label = circled(n);
-    }
     const resolve = (ref) => ref.type === "team" ? { type: "team", index: ref.index, label: ref.label } : { type: ref.type, match: ref.of.id, matchLabel: ref.of.label };
     for (const m of ordered) {
       m.leftRef = resolve(m.left);
@@ -525,6 +518,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       this.cells = /* @__PURE__ */ new Map();
       this.merges = [];
       this.borders = [];
+      this.paths = [];
       this.columns = /* @__PURE__ */ new Map();
     }
     key(row, col) {
@@ -567,6 +561,14 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     /** 範囲の片側に罫線を引く。ブラケットの枝を描くのに使う。 */
     border(r1, c1, r2, c2, side) {
       this.borders.push({ r1, c1, r2, c2, side });
+      return this;
+    }
+    /**
+     * 勝ち上がり経路。連結列のセルを勝者の色で塗ってマーカー線に見せる。
+     * 条件付き書式は罫線に触れないので、枝線そのものは動かせない。
+     */
+    path(r1, r2, col, cellRef, winnerOf) {
+      this.paths.push({ r1: Math.min(r1, r2), r2: Math.max(r1, r2), col, cellRef, winnerOf });
       return this;
     }
     setColumnWidth(col, width) {
@@ -717,8 +719,8 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
 
   // core/layout.js
   var COLUMNS = [
-    { col: 1, width: 7 },
-    // A: 試合番号
+    { col: 1, width: 9 },
+    // A: 試合番号（決勝R のような3文字ラベルまで収める）
     { col: 2, width: 20 },
     // B: 左チーム / ブラケット第1列
     { col: 3, width: 5 },
@@ -825,10 +827,10 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       g.set(base, 2, "\u9032\u51FA\u30C1\u30FC\u30E0", { role: "tableHeader" }).set(base, 3, "", { role: "tableHeader" }).set(base, 4, `${group.semis[0].roundName} ${semiLabels} \u306E\u52DD\u8005`, { role: "tableHeader" }).set(base, 5, "", { role: "tableHeader" }).set(base, 6, `${group.final.roundName} ${group.final.label}`, { role: "tableHeader" });
       for (let i = 0; i < group.entrants.length; i++) {
         const { row: r, col: c } = bracketCell(base, 0, i);
-        g.set(r, c, liveRefFormula(tournament, group.entrants[i]), {
-          role: "team",
-          winnerOf: group.semis[Math.floor(i / 2)].id
-        });
+        const nextId = group.semis[Math.floor(i / 2)].id;
+        g.set(r, c, liveRefFormula(tournament, group.entrants[i]), { role: "team", winnerOf: nextId });
+        const up = bracketCell(base, 1, Math.floor(i / 2));
+        g.path(r, up.row, c + 1, a1(r, c), nextId);
       }
       for (let i = 0; i < group.semis.length; i++) {
         const { row: r, col: c } = bracketCell(base, 1, i);
@@ -983,6 +985,10 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         else if (ref.type === "winner") style.championOf = ref.match;
         g.set(r, c, liveRefFormula(tournament, ref), style);
         if (ref.type === "winner") inBracket.add(ref.match);
+        if (style.winnerOf && levels[j + 1]) {
+          const up = bracketCell(base, j + 1, Math.floor(i / 2));
+          g.path(r, up.row, c + 1, a1(r, c), style.winnerOf);
+        }
       });
     });
     return base + bracketHeight(levels[0].length) + 1;
@@ -1019,6 +1025,10 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         else if (ref.type === "winner") style.championOf = ref.match;
         g.set(p.rows[i], p.col, liveRefFormula(tournament, ref), style);
         if (ref.type === "winner") inBracket.add(ref.match);
+        if (style.winnerOf && parent) {
+          const idx = parent.level.kind === "minor" ? Math.floor(i / 2) : i;
+          g.path(p.rows[i], parent.rows[idx], p.col + 1, a1(p.rows[i], p.col), style.winnerOf);
+        }
         g.border(p.rows[i], p.col, p.rows[i], p.col, "bottom");
         if (j > 0 && p.level.kind === "major") {
           g.border(p.rows[i], p.col - 1, p.rows[i], p.col - 1, "bottom");
@@ -1117,7 +1127,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
   });
   var customFormula = (f) => ({ type: "CUSTOM_FORMULA", values: [{ userEnteredValue: f }] });
   function buildConditionalFormatRules(tournament, grids, sheetIds) {
-    var _a, _b;
+    var _a, _b, _c;
     const out = [];
     for (const cell of grids.bracket.cells.values()) {
       const { winnerOf, championOf } = (_a = cell.style) != null ? _a : {};
@@ -1131,6 +1141,22 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         const w = helperCell(tournament, championOf, "winner");
         out.push(rule([range], customFormula(`=${w}<>""`), WINNER_FORMAT));
       }
+    }
+    for (const p of (_c = grids.bracket.paths) != null ? _c : []) {
+      const w = helperCell(tournament, p.winnerOf, "winner");
+      out.push(
+        rule(
+          [{
+            sheetId: sheetIds.bracket,
+            startRowIndex: p.r1 - 1,
+            endRowIndex: p.r2,
+            startColumnIndex: p.col - 1,
+            endColumnIndex: p.col
+          }],
+          customFormula(`=AND(${w}<>"",${p.cellRef}=${w})`),
+          WINNER_FORMAT
+        )
+      );
     }
     const n = tournament.matches.length;
     const mobileStart = 5;
