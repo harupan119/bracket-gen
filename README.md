@@ -80,7 +80,14 @@ Google スプレッドシートの標準機能では2箇所の入力欄を双方
 ```bash
 npm test        # 構造・レイアウト・数式・ペイロードの検証
 npm run build   # core/ を Apps Script 用の1ファイルへ束ねる
+
+# レイアウトをブラウザで確認する（Sheets へ往復しない）
+node tools/preview.mjs '{"format":"double-elimination","teams":10,"courts":4}' > preview.html
 ```
+
+`tools/preview.mjs` は生成ペイロードが持つ書式をそのままHTMLへ描き出します。
+罫線や地色の崩れは実際に見ないと分からないので、Sheets へ書き込む前の確認に使います。
+条件付き書式は結果データに依存するため描きません（静的な意匠の確認用）。
 
 Apps Script の V8 ランタイムは `import` / `export` を解釈しません。
 `core/` は素の ES モジュールとして書き、esbuild で `apps-script/core.bundle.gs` へ

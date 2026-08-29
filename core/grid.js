@@ -39,10 +39,13 @@ export class Grid {
         );
       }
     }
-    // 結合範囲の左上以外に値があるとGoogle Sheets側で値が消える
+    // 結合範囲の左上以外に値があるとGoogle Sheets側で値が消える。
+    // 書式を載せるためだけの空セルは、結合で吸収されるので許容する。
     for (let r = r1; r <= r2; r++) {
       for (let c = c1; c <= c2; c++) {
-        if ((r !== r1 || c !== c1) && this.cells.has(this.key(r, c))) {
+        if (r === r1 && c === c1) continue;
+        const cell = this.cells.get(this.key(r, c));
+        if (cell && cell.value !== '' && cell.value != null) {
           throw new Error(`${this.name}: 結合範囲 ${a1(r1, c1)}:${a1(r2, c2)} の内側 ${a1(r, c)} に値があります`);
         }
       }

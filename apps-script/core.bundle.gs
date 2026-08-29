@@ -554,7 +554,9 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       }
       for (let r = r1; r <= r2; r++) {
         for (let c = c1; c <= c2; c++) {
-          if ((r !== r1 || c !== c1) && this.cells.has(this.key(r, c))) {
+          if (r === r1 && c === c1) continue;
+          const cell = this.cells.get(this.key(r, c));
+          if (cell && cell.value !== "" && cell.value != null) {
             throw new Error(`${this.name}: \u7D50\u5408\u7BC4\u56F2 ${a1(r1, c1)}:${a1(r2, c2)} \u306E\u5185\u5074 ${a1(r, c)} \u306B\u5024\u304C\u3042\u308A\u307E\u3059`);
           }
         }
@@ -798,15 +800,18 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       for (const c of [1, 2, 3, 4, 5, 6]) g.set(row, c, "", { role: "tableHeader" });
       g.cells.get(`${row},1`).value = "\u8A66\u5408";
       g.cells.get(`${row},2`).value = "\u5BFE\u6226\u30AB\u30FC\u30C9";
-      g.cells.get(`${row},6`).value = "\u884C\u304D\u5148";
+      g.cells.get(`${row},5`).value = "\u884C\u304D\u5148";
+      g.merge(row, 2, row, 4);
+      g.merge(row, 5, row, 6);
       row += 1;
       for (const m of ms) {
         g.set(row, 1, m.label, { role: "label" });
         g.set(row, 2, liveRefFormula(tournament, m.left), { role: "slot", winnerOf: m.id });
         g.set(row, 3, "vs", { role: "body" });
         g.set(row, 4, liveRefFormula(tournament, m.right), { role: "slot", winnerOf: m.id });
-        g.set(row, 5, "", { role: "body" });
-        g.set(row, 6, destinationText(tournament, m), { role: "note" });
+        g.set(row, 5, destinationText(tournament, m), { role: "note" });
+        g.set(row, 6, "", { role: "note" });
+        g.merge(row, 5, row, 6);
         row += 1;
       }
       row += 1;
@@ -841,8 +846,9 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       g.set(row, 2, liveRefFormula(tournament, group.consolation.left), { role: "slot", winnerOf: group.consolation.id });
       g.set(row, 3, "vs", { role: "body" });
       g.set(row, 4, liveRefFormula(tournament, group.consolation.right), { role: "slot", winnerOf: group.consolation.id });
-      g.set(row, 5, "", { role: "body" });
-      g.set(row, 6, `${group.consolation.roundName}\uFF08\u52DD\u8005\uFF1D${group.consolation.decides.winner}\u4F4D\uFF0F\u6557\u8005\uFF1D${group.consolation.decides.loser}\u4F4D\uFF09`, { role: "note" });
+      g.set(row, 5, `${group.consolation.roundName}\uFF08\u52DD\u8005\uFF1D${group.consolation.decides.winner}\u4F4D\uFF0F\u6557\u8005\uFF1D${group.consolation.decides.loser}\u4F4D\uFF09`, { role: "note" });
+      g.set(row, 6, "", { role: "note" });
+      g.merge(row, 5, row, 6);
       row += 2;
     }
     g.set(row, 1, "\u25A0 \u6700\u7D42\u9806\u4F4D", { role: "section" });
@@ -851,11 +857,13 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     for (const c of [1, 2, 3, 4, 5, 6]) g.set(row, c, "", { role: "tableHeader" });
     g.cells.get(`${row},1`).value = "\u9806\u4F4D";
     g.cells.get(`${row},2`).value = "\u30C1\u30FC\u30E0\u540D";
-    g.cells.get(`${row},6`).value = "\u6C7A\u5B9A\u65B9\u6CD5";
+    g.cells.get(`${row},5`).value = "\u6C7A\u5B9A\u65B9\u6CD5";
+    g.merge(row, 2, row, 4);
+    g.merge(row, 5, row, 6);
     row += 1;
     const placements = tournament.matches.filter((x) => x.decides).flatMap((m) => [
-      m.decides.winner != null && { rank: m.decides.winner, text: `${m.label} ${m.roundName}\u306E\u52DD\u8005`, cell: controlCell(tournament, m.id, "winner"), matchId: m.id },
-      m.decides.loser != null && { rank: m.decides.loser, text: `${m.label} ${m.roundName}\u306E\u6557\u8005`, cell: controlCell(tournament, m.id, "loser"), matchId: m.id }
+      m.decides.winner != null && { rank: m.decides.winner, text: matchDesc(m, "\u52DD\u8005"), cell: controlCell(tournament, m.id, "winner"), matchId: m.id },
+      m.decides.loser != null && { rank: m.decides.loser, text: matchDesc(m, "\u6557\u8005"), cell: controlCell(tournament, m.id, "loser"), matchId: m.id }
     ]).filter(Boolean);
     const byRank = /* @__PURE__ */ new Map();
     for (const p of placements) {
@@ -867,8 +875,11 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       const formula = cands.slice().reverse().reduceRight((acc, c) => `IF(${c.cell}<>"",${c.cell},${acc})`, '""');
       g.set(row, 1, `${rank}\u4F4D`, { role: "label" });
       g.set(row, 2, `=${formula}`, rank === 1 ? { role: "slot", championOf: cands.at(-1).matchId } : { role: "slot" });
-      for (const c of [3, 4, 5]) g.set(row, c, "", { role: "body" });
-      g.set(row, 6, cands.map((c) => c.text).join(" \uFF0F "), { role: "note" });
+      for (const c of [3, 4]) g.set(row, c, "", { role: "slot" });
+      g.merge(row, 2, row, 4);
+      g.set(row, 5, cands.map((c) => c.text).join(" \uFF0F "), { role: "note" });
+      g.set(row, 6, "", { role: "note" });
+      g.merge(row, 5, row, 6);
       row += 1;
     }
     return g;
@@ -878,7 +889,14 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     const parts = [];
     if (m.winnerTo) parts.push(`\u52DD\u8005\u2192${label(m.winnerTo)}`);
     if (m.loserTo) parts.push(`\u6557\u8005\u2192${label(m.loserTo)}`);
+    if (!parts.length && m.decides) {
+      if (m.decides.winner != null) parts.push(`\u52DD\u8005\uFF1D${m.decides.winner}\u4F4D`);
+      if (m.decides.loser != null) parts.push(`\u6557\u8005\uFF1D${m.decides.loser}\u4F4D`);
+    }
     return parts.join("\u3000\uFF0F\u3000");
+  }
+  function matchDesc(m, kind) {
+    return m.label === m.roundName ? `${m.label}\u306E${kind}` : `${m.label} ${m.roundName}\u306E${kind}`;
   }
   function terminalGroups(tournament) {
     const semis = tournament.matches.filter(
@@ -956,6 +974,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     levels.forEach((level, j) => {
       level.forEach((ref, i) => {
         if (!ref) return;
+        if (j > 0 && ref.type !== "winner") return;
         const { row: r, col: c } = bracketCell(base, j, i);
         const parent = levels[j + 1] ? levels[j + 1][Math.floor(i / 2)] : null;
         const style = { role: j === 0 ? "team" : "slot" };
@@ -991,6 +1010,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     placed.forEach((p, j) => {
       p.level.refs.forEach((ref, i) => {
         if (!ref) return;
+        if (j > 0 && ref.type !== "winner") return;
         const parent = placed[j + 1];
         const parentRef = parent ? parent.level.refs[parent.level.kind === "minor" ? Math.floor(i / 2) : i] : null;
         const style = { role: j === 0 ? "team" : "slot" };
@@ -1000,6 +1020,9 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         g.set(p.rows[i], p.col, liveRefFormula(tournament, ref), style);
         if (ref.type === "winner") inBracket.add(ref.match);
         g.border(p.rows[i], p.col, p.rows[i], p.col, "bottom");
+        if (j > 0 && p.level.kind === "major") {
+          g.border(p.rows[i], p.col - 1, p.rows[i], p.col - 1, "bottom");
+        }
       });
       const next = placed[j + 1];
       if (next && next.level.kind === "minor") {
