@@ -61,7 +61,8 @@ test('数式は formulaValue、文字列は stringValue で出る', () => {
   assert.ok(b2.userEnteredValue.formulaValue.startsWith('=IF('), '数式');
   const a2 = control.rows[1].values[0];
   assert.equal(a2.userEnteredValue.stringValue, '①', '文字列');
-  // 空セルに値を持たせない
+  // updateCells は値だけを運ぶ（書式は repeatCell でまとめて当てる）
+  assert.equal(control.fields, 'userEnteredValue');
   const empty = control.rows[0].values[7];
   assert.deepEqual(empty ?? {}, {});
 });
@@ -83,18 +84,19 @@ test('入力規則が全試合ぶん出て、選択肢がプリセットと一�
   }
 });
 
-test('入力セルだけが黄色地になる', () => {
-  // ヘッダ帯にも背景色が付くので、入力欄の判定は TEXT 書式の有無で行う。
+test('入力欄は進行表のチーム名記入欄とスマホ用の結果欄だけ', () => {
   const t = make();
   const p = buildSpreadsheetPayload(t);
-  const mobile = p.requests.find((r) => r.updateCells?.range.sheetId === 2).updateCells;
-  const inputs = mobile.rows.flatMap((r) => r.values)
-    .filter((v) => v?.userEnteredFormat?.numberFormat?.type === 'TEXT');
-  assert.equal(inputs.length, t.matches.length);
-  for (const c of inputs) {
-    const bg = c.userEnteredFormat.backgroundColor;
-    assert.ok(bg.red > 0.95 && bg.green > 0.9 && bg.blue < 0.9, `黄色地でない: ${JSON.stringify(bg)}`);
+  const byTab = new Map();
+  for (const r of p.requests) {
+    if (!r.repeatCell?.cell.userEnteredFormat.numberFormat) continue;
+    const g = r.repeatCell.range;
+    const n = (g.endRowIndex - g.startRowIndex) * (g.endColumnIndex - g.startColumnIndex);
+    byTab.set(g.sheetId, (byTab.get(g.sheetId) ?? 0) + n);
   }
+  assert.deepEqual([...byTab.keys()].sort(), [1, 2], '進行表(1)とスマホ用(2)だけ');
+  assert.equal(byTab.get(1), t.teams, '進行表のチーム名記入欄');
+  assert.equal(byTab.get(2), t.matches.length, 'スマホ用の結果欄');
 });
 
 test('16チーム4コートでも payload が壊れずに出る', () => {
@@ -103,17 +105,19 @@ test('16チーム4コートでも payload が壊れずに出る', () => {
   assert.equal(p.requests.filter((r) => r.setDataValidation).length, 32);
 });
 
-test('入力セルに TEXT 書式が付く（"2-1" が日付に化けるのを防ぐ）', () => {
+test('入力欄に TEXT 書式が付く（"2-1" が日付に化けるのを防ぐ）', () => {
   for (const name of ['win-loss', 'sets-of-3', 'sets-of-5']) {
     const t = make({ scoring: name });
     const p = buildSpreadsheetPayload(t);
-    const mobile = p.requests.find((r) => r.updateCells?.range.sheetId === 2).updateCells;
-    const inputs = mobile.rows.flatMap((r) => r.values)
-      .filter((v) => v?.userEnteredFormat?.numberFormat);
-    assert.equal(inputs.length, t.matches.length, name);
-    for (const c of inputs) {
-      assert.deepEqual(c.userEnteredFormat.numberFormat, { type: 'TEXT' }, name);
+    const reqs = p.requests.filter((r) => r.repeatCell?.cell.userEnteredFormat.numberFormat);
+    let covered = 0;
+    for (const r of reqs) {
+      assert.deepEqual(r.repeatCell.cell.userEnteredFormat.numberFormat, { type: 'TEXT' }, name);
+      const g = r.repeatCell.range;
+      covered += (g.endRowIndex - g.startRowIndex) * (g.endColumnIndex - g.startColumnIndex);
     }
+    // 結果欄に加えて、進行表のチーム名記入欄も入力欄
+    assert.equal(covered, t.matches.length + t.teams, name);
   }
 });
 

@@ -530,17 +530,17 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     key(row, col) {
       return `${row},${col}`;
     }
-    set(row, col, value, style = {}) {
+    set(row, col, value2, style = {}) {
       if (!Number.isInteger(row) || row < 1 || !Number.isInteger(col) || col < 1) {
         throw new Error(`${this.name}: \u4E0D\u6B63\u306A\u30BB\u30EB\u4F4D\u7F6E (${row}, ${col})`);
       }
       const k = this.key(row, col);
       if (this.cells.has(k)) {
         throw new Error(
-          `${this.name}: \u30BB\u30EB ${a1(row, col)} \u3078\u306E\u4E8C\u91CD\u66F8\u304D\u8FBC\u307F\u3002\u65E2\u5B58="${this.cells.get(k).value}" \u65B0\u898F="${value}"`
+          `${this.name}: \u30BB\u30EB ${a1(row, col)} \u3078\u306E\u4E8C\u91CD\u66F8\u304D\u8FBC\u307F\u3002\u65E2\u5B58="${this.cells.get(k).value}" \u65B0\u898F="${value2}"`
         );
       }
-      this.cells.set(k, { row, col, value, style });
+      this.cells.set(k, { row, col, value: value2, style });
       return this;
     }
     merge(r1, c1, r2, c2) {
@@ -1079,7 +1079,8 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     tableHeader: { size: "header", bold: true, color: "white", fill: "headerFill", box: true, align: "CENTER" },
     team: { size: "body", bold: true, fill: "teamFill", box: true, align: "CENTER" },
     slot: { size: "body", box: true, align: "CENTER" },
-    input: { size: "body", bold: true, fill: "inputFill", box: true, align: "CENTER" },
+    // TEXT書式は必須。無いと "2-1" が日付として解釈され、勝敗判定の文字列比較が黙って外れる。
+    input: { size: "body", bold: true, fill: "inputFill", box: true, align: "CENTER", text: true },
     body: { size: "body", box: true },
     label: { size: "body", bold: true, box: true, align: "CENTER" }
   };
@@ -1189,6 +1190,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     for (const { sheetId, grid } of sheets) {
       requests.push(updateCellsRequest(sheetId, grid));
       requests.push(commonFormatRequest(sheetId, grid));
+      requests.push(...roleFormatRequests(sheetId, grid));
       requests.push(...boxBorderRequests(sheetId, grid));
       for (const [col, width] of grid.columns) {
         requests.push({
@@ -1263,35 +1265,90 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       updateCells: {
         range: { sheetId, startRowIndex: 0, startColumnIndex: 0, endRowIndex: grid.maxRow, endColumnIndex: grid.maxCol },
         rows,
-        fields: "userEnteredValue,userEnteredFormat"
+        fields: "userEnteredValue"
       }
     };
   }
   function cellData(cell) {
-    var _a, _b;
     if (!cell) return {};
-    const style = (_a = cell.style) != null ? _a : {};
-    const fmt = {};
     const v = cell.value;
-    const value = v !== "" && v != null ? String(v).startsWith("=") ? { formulaValue: String(v) } : { stringValue: String(v) } : null;
-    const role = (_b = ROLES[style.role]) != null ? _b : null;
-    const text = {};
-    if (role) {
+    if (v === "" || v == null) return {};
+    return {
+      userEnteredValue: String(v).startsWith("=") ? { formulaValue: String(v) } : { stringValue: String(v) }
+    };
+  }
+  function roleFormatRequests(sheetId, grid) {
+    var _a, _b, _c;
+    const byRole = /* @__PURE__ */ new Map();
+    for (const c of grid.cells.values()) {
+      const r = (_a = c.style) == null ? void 0 : _a.role;
+      if (!r || !ROLES[r]) continue;
+      if (!byRole.has(r)) byRole.set(r, /* @__PURE__ */ new Set());
+      byRole.get(r).add(`${c.row},${c.col}`);
+    }
+    const out = [];
+    for (const [roleName, cells] of byRole) {
+      const role = ROLES[roleName];
+      const fmt = {};
+      const text = {};
       if (role.bold) text.bold = true;
       if (role.size) text.fontSize = THEME.sizes[role.size];
       if (role.color) text.foregroundColor = toRgb(THEME.colors[role.color]);
-      if (role.fill) fmt.backgroundColor = toRgb(THEME.colors[role.fill]);
-      if (role.align) fmt.horizontalAlignment = role.align;
+      if (Object.keys(text).length) fmt.textFormat = text;
+      fmt.backgroundColor = toRgb(THEME.colors[(_b = role.fill) != null ? _b : "white"]);
+      fmt.horizontalAlignment = (_c = role.align) != null ? _c : "LEFT";
+      if (role.text) fmt.numberFormat = { type: "TEXT" };
+      const fields = [
+        "userEnteredFormat.backgroundColor",
+        "userEnteredFormat.horizontalAlignment",
+        "userEnteredFormat.textFormat.bold",
+        "userEnteredFormat.textFormat.fontSize",
+        "userEnteredFormat.textFormat.foregroundColor",
+        ...role.text ? ["userEnteredFormat.numberFormat"] : []
+      ].join(",");
+      for (const box of rectangles(cells)) {
+        out.push({
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: box.r0 - 1,
+              endRowIndex: box.r1,
+              startColumnIndex: box.c0 - 1,
+              endColumnIndex: box.c1
+            },
+            cell: { userEnteredFormat: fmt },
+            fields
+          }
+        });
+      }
     }
-    if (style.bold) text.bold = true;
-    if (style.size) text.fontSize = style.size;
-    if (Object.keys(text).length) fmt.textFormat = text;
-    if (style.input) {
-      fmt.backgroundColor = toRgb(THEME.colors.inputFill);
-      fmt.numberFormat = { type: "TEXT" };
+    return out;
+  }
+  function rectangles(cells) {
+    const has = (r, c) => cells.has(`${r},${c}`);
+    const taken = /* @__PURE__ */ new Set();
+    const out = [];
+    const sorted = [...cells].map((k) => k.split(",").map(Number)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    for (const [r0, c0] of sorted) {
+      if (taken.has(`${r0},${c0}`)) continue;
+      let c1 = c0;
+      while (has(r0, c1 + 1) && !taken.has(`${r0},${c1 + 1}`)) c1 += 1;
+      let r1 = r0;
+      for (; ; ) {
+        const nr = r1 + 1;
+        let ok = true;
+        for (let c = c0; c <= c1; c++) {
+          if (!has(nr, c) || taken.has(`${nr},${c}`)) {
+            ok = false;
+            break;
+          }
+        }
+        if (!ok) break;
+        r1 = nr;
+      }
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) taken.add(`${r},${c}`);
+      out.push({ r0, c0, r1, c1 });
     }
-    const out = { userEnteredFormat: fmt };
-    if (value) out.userEnteredValue = value;
     return out;
   }
   function commonFormatRequest(sheetId, grid) {
@@ -1310,41 +1367,24 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       if ((_b = ROLES[(_a = c.style) == null ? void 0 : _a.role]) == null ? void 0 : _b.box) boxed.add(`${c.row},${c.col}`);
     }
     const line = { style: "SOLID", color: toRgb(THEME.colors.grid) };
-    const out = [];
-    const taken = /* @__PURE__ */ new Set();
-    const key = (r, c) => `${r},${c}`;
-    const cells = [...boxed].map((k) => k.split(",").map(Number)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-    for (const [r0, c0] of cells) {
-      if (taken.has(key(r0, c0))) continue;
-      let c1 = c0;
-      while (boxed.has(key(r0, c1 + 1)) && !taken.has(key(r0, c1 + 1))) c1 += 1;
-      let r1 = r0;
-      for (; ; ) {
-        const nr = r1 + 1;
-        let ok = true;
-        for (let c = c0; c <= c1; c++) {
-          if (!boxed.has(key(nr, c)) || taken.has(key(nr, c))) {
-            ok = false;
-            break;
-          }
-        }
-        if (!ok) break;
-        r1 = nr;
+    return rectangles(boxed).map((b) => ({
+      updateBorders: {
+        range: {
+          sheetId,
+          startRowIndex: b.r0 - 1,
+          endRowIndex: b.r1,
+          startColumnIndex: b.c0 - 1,
+          endColumnIndex: b.c1
+        },
+        top: line,
+        bottom: line,
+        left: line,
+        right: line,
+        // 内側罫線は範囲が2セル以上あるときだけ意味がある
+        ...b.c1 > b.c0 ? { innerVertical: line } : {},
+        ...b.r1 > b.r0 ? { innerHorizontal: line } : {}
       }
-      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) taken.add(key(r, c));
-      out.push({
-        updateBorders: {
-          range: { sheetId, startRowIndex: r0 - 1, endRowIndex: r1, startColumnIndex: c0 - 1, endColumnIndex: c1 },
-          top: line,
-          bottom: line,
-          left: line,
-          right: line,
-          innerVertical: line,
-          innerHorizontal: line
-        }
-      });
-    }
-    return out;
+    }));
   }
   function validationRequests(sheetId, grid) {
     var _a;

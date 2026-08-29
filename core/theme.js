@@ -38,7 +38,8 @@ export const ROLES = {
   tableHeader: { size: 'header',  bold: true, color: 'white', fill: 'headerFill', box: true, align: 'CENTER' },
   team:        { size: 'body',    bold: true, fill: 'teamFill', box: true, align: 'CENTER' },
   slot:        { size: 'body',    box: true, align: 'CENTER' },
-  input:       { size: 'body',    bold: true, fill: 'inputFill', box: true, align: 'CENTER' },
+  // TEXT書式は必須。無いと "2-1" が日付として解釈され、勝敗判定の文字列比較が黙って外れる。
+  input:       { size: 'body',    bold: true, fill: 'inputFill', box: true, align: 'CENTER', text: true },
   body:        { size: 'body',    box: true },
   label:       { size: 'body',    bold: true, box: true, align: 'CENTER' },
 };

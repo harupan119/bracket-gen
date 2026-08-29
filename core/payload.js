@@ -40,6 +40,7 @@ export function buildSpreadsheetPayload(tournament) {
   for (const { sheetId, grid } of sheets) {
     requests.push(updateCellsRequest(sheetId, grid));
     requests.push(commonFormatRequest(sheetId, grid));
+    requests.push(...roleFormatRequests(sheetId, grid));
     requests.push(...boxBorderRequests(sheetId, grid));
     for (const [col, width] of grid.columns) {
       requests.push({
@@ -118,23 +119,25 @@ function updateCellsRequest(sheetId, grid) {
     updateCells: {
       range: { sheetId, startRowIndex: 0, startColumnIndex: 0, endRowIndex: grid.maxRow, endColumnIndex: grid.maxCol },
       rows,
-      fields: 'userEnteredValue,userEnteredFormat',
+      fields: 'userEnteredValue',
     },
   };
 }
 
 function cellData(cell) {
   if (!cell) return {};
+  const v = cell.value;
+  if (v === '' || v == null) return {};
+  return {
+    userEnteredValue: String(v).startsWith('=')
+      ? { formulaValue: String(v) }
+      : { stringValue: String(v) },
+  };
+}
+
+function unusedCellFormat(cell) {
   const style = cell.style ?? {};
   const fmt = {};
-
-  const v = cell.value;
-  const value =
-    v !== '' && v != null
-      ? String(v).startsWith('=')
-        ? { formulaValue: String(v) }
-        : { stringValue: String(v) }
-      : null;
 
   // 役割から書式を決める。個別指定（bold/size）は役割より優先する。
   const role = ROLES[style.role] ?? null;
@@ -165,6 +168,82 @@ function cellData(cell) {
   return out;
 }
 
+/**
+ * 役割ごとの書式を、同じ役割が並ぶ矩形単位で当てる。
+ * セル1つずつ userEnteredFormat を持たせると、地色や文字色のオブジェクトが
+ * 何百回も繰り返されてペイロードが膨れる。表は矩形になるのでよくまとまる。
+ */
+function roleFormatRequests(sheetId, grid) {
+  const byRole = new Map();
+  for (const c of grid.cells.values()) {
+    const r = c.style?.role;
+    if (!r || !ROLES[r]) continue;
+    if (!byRole.has(r)) byRole.set(r, new Set());
+    byRole.get(r).add(`${c.row},${c.col}`);
+  }
+  const out = [];
+  for (const [roleName, cells] of byRole) {
+    const role = ROLES[roleName];
+    const fmt = {};
+    const text = {};
+    if (role.bold) text.bold = true;
+    if (role.size) text.fontSize = THEME.sizes[role.size];
+    if (role.color) text.foregroundColor = toRgb(THEME.colors[role.color]);
+    if (Object.keys(text).length) fmt.textFormat = text;
+    fmt.backgroundColor = toRgb(THEME.colors[role.fill ?? 'white']);
+    fmt.horizontalAlignment = role.align ?? 'LEFT';
+    if (role.text) fmt.numberFormat = { type: 'TEXT' };
+    const fields = [
+      'userEnteredFormat.backgroundColor',
+      'userEnteredFormat.horizontalAlignment',
+      'userEnteredFormat.textFormat.bold',
+      'userEnteredFormat.textFormat.fontSize',
+      'userEnteredFormat.textFormat.foregroundColor',
+      ...(role.text ? ['userEnteredFormat.numberFormat'] : []),
+    ].join(',');
+    for (const box of rectangles(cells)) {
+      out.push({
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: box.r0 - 1, endRowIndex: box.r1,
+            startColumnIndex: box.c0 - 1, endColumnIndex: box.c1,
+          },
+          cell: { userEnteredFormat: fmt },
+          fields,
+        },
+      });
+    }
+  }
+  return out;
+}
+
+/** セル集合を、なるべく大きな矩形に分割する。罫線と役割書式で共用する。 */
+function rectangles(cells) {
+  const has = (r, c) => cells.has(`${r},${c}`);
+  const taken = new Set();
+  const out = [];
+  const sorted = [...cells].map((k) => k.split(',').map(Number)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  for (const [r0, c0] of sorted) {
+    if (taken.has(`${r0},${c0}`)) continue;
+    let c1 = c0;
+    while (has(r0, c1 + 1) && !taken.has(`${r0},${c1 + 1}`)) c1 += 1;
+    let r1 = r0;
+    for (;;) {
+      const nr = r1 + 1;
+      let ok = true;
+      for (let c = c0; c <= c1; c++) {
+        if (!has(nr, c) || taken.has(`${nr},${c}`)) { ok = false; break; }
+      }
+      if (!ok) break;
+      r1 = nr;
+    }
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) taken.add(`${r},${c}`);
+    out.push({ r0, c0, r1, c1 });
+  }
+  return out;
+}
+
 /** 全セルに共通する書式を1リクエストで当てる。updateCells の後に、絞ったfieldsで重ねる。 */
 function commonFormatRequest(sheetId, grid) {
   return {
@@ -186,40 +265,21 @@ function boxBorderRequests(sheetId, grid) {
     if (ROLES[c.style?.role]?.box) boxed.add(`${c.row},${c.col}`);
   }
   const line = { style: 'SOLID', color: toRgb(THEME.colors.grid) };
-  const out = [];
-  const taken = new Set();
-
-  // 罫線は矩形単位でまとめる。表の5行×6列を1リクエストにできると、
-  // セル単位で出すより1桁小さくなる（色オブジェクトの繰り返しが効くため）。
-  const key = (r, c) => `${r},${c}`;
-  const cells = [...boxed].map((k) => k.split(',').map(Number)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  for (const [r0, c0] of cells) {
-    if (taken.has(key(r0, c0))) continue;
-    // 右へ伸ばす
-    let c1 = c0;
-    while (boxed.has(key(r0, c1 + 1)) && !taken.has(key(r0, c1 + 1))) c1 += 1;
-    // 同じ幅で下へ伸ばす
-    let r1 = r0;
-    for (;;) {
-      const nr = r1 + 1;
-      let ok = true;
-      for (let c = c0; c <= c1; c++) {
-        if (!boxed.has(key(nr, c)) || taken.has(key(nr, c))) { ok = false; break; }
-      }
-      if (!ok) break;
-      r1 = nr;
-    }
-    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) taken.add(key(r, c));
-    out.push({
-      updateBorders: {
-        range: { sheetId, startRowIndex: r0 - 1, endRowIndex: r1, startColumnIndex: c0 - 1, endColumnIndex: c1 },
-        top: line, bottom: line, left: line, right: line,
-        innerVertical: line, innerHorizontal: line,
+  return rectangles(boxed).map((b) => ({
+    updateBorders: {
+      range: {
+        sheetId,
+        startRowIndex: b.r0 - 1, endRowIndex: b.r1,
+        startColumnIndex: b.c0 - 1, endColumnIndex: b.c1,
       },
-    });
-  }
-  return out;
+      top: line, bottom: line, left: line, right: line,
+      // 内側罫線は範囲が2セル以上あるときだけ意味がある
+      ...(b.c1 > b.c0 ? { innerVertical: line } : {}),
+      ...(b.r1 > b.r0 ? { innerHorizontal: line } : {}),
+    },
+  }));
 }
+
 
 
 function validationRequests(sheetId, grid) {

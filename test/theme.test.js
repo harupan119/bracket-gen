@@ -12,6 +12,12 @@ const cellsOf = (payload, sheetId) =>
     .updateCells.rows.flatMap((r) => r.values)
     .filter((v) => v && Object.keys(v).length);
 
+/** 役割ごとの書式は repeatCell でまとめて当てるので、そこから引く。 */
+const formatsOf = (payload, sheetId) =>
+  payload.requests
+    .filter((r) => r.repeatCell?.range.sheetId === sheetId && r.repeatCell.cell.userEnteredFormat.backgroundColor)
+    .map((r) => r.repeatCell.cell.userEnteredFormat);
+
 const hex = (c) =>
   '#' + [c.red, c.green, c.blue].map((x) => Math.round((x ?? 0) * 255).toString(16).padStart(2, '0')).join('').toUpperCase();
 
@@ -37,25 +43,21 @@ test('各タブにフォントが一括で指定される', () => {
 
 test('表ヘッダが紺地に白の太字になる', () => {
   const p = buildSpreadsheetPayload(make());
-  const headers = cellsOf(p, 0).filter(
-    (c) => hex(c.userEnteredFormat.backgroundColor ?? {}) === THEME.colors.headerFill
-  );
+  const headers = formatsOf(p, 0).filter((f) => hex(f.backgroundColor) === THEME.colors.headerFill);
   assert.ok(headers.length > 0, 'ヘッダ帯が無い');
-  for (const c of headers) {
-    assert.equal(c.userEnteredFormat.textFormat.bold, true);
-    assert.equal(hex(c.userEnteredFormat.textFormat.foregroundColor), THEME.colors.headerText);
-    assert.equal(c.userEnteredFormat.textFormat.fontSize, THEME.sizes.header);
+  for (const f of headers) {
+    assert.equal(f.textFormat.bold, true);
+    assert.equal(hex(f.textFormat.foregroundColor), THEME.colors.headerText);
+    assert.equal(f.textFormat.fontSize, THEME.sizes.header);
   }
 });
 
 test('セクション見出しが淡青地に紺文字になる', () => {
   const p = buildSpreadsheetPayload(make());
-  const sections = cellsOf(p, 0).filter(
-    (c) => hex(c.userEnteredFormat.backgroundColor ?? {}) === THEME.colors.sectionFill
-  );
+  const sections = formatsOf(p, 0).filter((f) => hex(f.backgroundColor) === THEME.colors.sectionFill);
   assert.ok(sections.length > 0, 'セクション見出しが無い');
-  for (const c of sections) {
-    assert.equal(hex(c.userEnteredFormat.textFormat.foregroundColor), THEME.colors.accent);
+  for (const f of sections) {
+    assert.equal(hex(f.textFormat.foregroundColor), THEME.colors.accent);
   }
 });
 
@@ -65,13 +67,16 @@ test('格子の罫線が矩形単位でまとめて引かれる', () => {
   const p = buildSpreadsheetPayload(make());
   const grids = p.requests
     .map((r) => r.updateBorders)
-    .filter((b) => b && b.range.sheetId === 0 && b.innerVertical);
+    .filter((b) => b && b.range.sheetId === 0 && hex((b.top ?? b.bottom ?? b.left).color) === THEME.colors.grid);
   assert.ok(grids.length > 3, `格子の罫線が少なすぎる: ${grids.length}`);
   for (const b of grids) {
-    for (const side of ['top', 'bottom', 'left', 'right', 'innerVertical', 'innerHorizontal']) {
+    for (const side of ['top', 'bottom', 'left', 'right']) {
       assert.equal(b[side].style, 'SOLID', side);
       assert.equal(hex(b[side].color), THEME.colors.grid, side);
     }
+    // 内側罫線は2セル以上のときだけ。1セル範囲に付けても効かず、ペイロードが太るだけ。
+    assert.equal(Boolean(b.innerVertical), b.range.endColumnIndex - b.range.startColumnIndex > 1);
+    assert.equal(Boolean(b.innerHorizontal), b.range.endRowIndex - b.range.startRowIndex > 1);
   }
   // 表は複数行にまたがる矩形として1回で出るはず（1行ずつ出ていない）
   assert.ok(grids.some((b) => b.range.endRowIndex - b.range.startRowIndex > 1), '矩形にまとまっていない');
@@ -91,7 +96,7 @@ test('枝線と格子で色を使い分ける', () => {
   // 枝線は濃い線、格子は細いグレー。同じ色だとブラケットの経路が沈む。
   const p = buildSpreadsheetPayload(make());
   const branch = p.requests.map((r) => r.updateBorders)
-    .filter((b) => b && b.range.sheetId === 0 && !b.innerVertical);
+    .filter((b) => b && b.range.sheetId === 0 && hex((b.top ?? b.bottom ?? b.left).color) === THEME.colors.line);
   assert.ok(branch.length > 0, '枝線が無い');
   for (const b of branch) {
     const side = ['top', 'bottom', 'left', 'right'].find((x) => b[x]);
@@ -99,16 +104,25 @@ test('枝線と格子で色を使い分ける', () => {
   }
 });
 
-test('入力欄が黄色地・太字・TEXT書式になる', () => {
+test('入力欄が黄色地・太字・TEXT書式になり、全試合ぶんを覆う', () => {
   const t = make();
   const p = buildSpreadsheetPayload(t);
-  const inputs = cellsOf(p, 2).filter((c) => c.userEnteredFormat.numberFormat);
-  assert.equal(inputs.length, t.matches.length);
-  for (const c of inputs) {
-    assert.equal(hex(c.userEnteredFormat.backgroundColor), THEME.colors.inputFill);
-    assert.equal(c.userEnteredFormat.textFormat.bold, true);
-    assert.deepEqual(c.userEnteredFormat.numberFormat, { type: 'TEXT' });
+  const inputs = p.requests.filter(
+    (r) => r.repeatCell?.range.sheetId === 2 && r.repeatCell.cell.userEnteredFormat.numberFormat
+  );
+  assert.ok(inputs.length > 0, '入力欄の書式が無い');
+  let covered = 0;
+  for (const r of inputs) {
+    const f = r.repeatCell.cell.userEnteredFormat;
+    assert.equal(hex(f.backgroundColor), THEME.colors.inputFill);
+    assert.equal(f.textFormat.bold, true);
+    assert.deepEqual(f.numberFormat, { type: 'TEXT' });
+    // TEXT を落とすと "2-1" が日付に化ける。fields に含まれていなければ効かない。
+    assert.match(r.repeatCell.fields, /userEnteredFormat\.numberFormat/);
+    const g = r.repeatCell.range;
+    covered += (g.endRowIndex - g.startRowIndex) * (g.endColumnIndex - g.startColumnIndex);
   }
+  assert.equal(covered, t.matches.length, 'スマホ用の入力欄の数が試合数と合わない');
 });
 
 test('列幅が実物の実測値と一致する', () => {
