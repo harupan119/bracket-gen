@@ -1039,34 +1039,14 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     return base + levels[0].refs.length * 2 + 1;
   }
 
-  // core/palette.js
-  var COLORS = {
-    line: "#202124",
-    // ブラケットの枝
-    header: "#F1F3F4",
-    winner: "#D93025",
-    // 勝者セル・勝ち上がり経路
-    loser: "#9AA0A6",
-    resultPending: "#FFF2CC",
-    // 未入力の結果セル（黄）
-    resultDone: "#E2F0D9"
-    // 入力済みの結果セル（緑）
-  };
-  function toRgb(hex) {
-    const h = hex.replace("#", "");
-    return {
-      red: parseInt(h.slice(0, 2), 16) / 255,
-      green: parseInt(h.slice(2, 4), 16) / 255,
-      blue: parseInt(h.slice(4, 6), 16) / 255
-    };
-  }
-
   // core/theme.js
   var THEME = {
     font: "Hiragino Sans",
     colors: {
       grid: "#9CA3AF",
       // 細い格子罫線
+      line: "#202124",
+      // ブラケットの枝線（格子より濃くして経路を目立たせる）
       accent: "#1F4E79",
       // 見出しの文字・強調罫線
       headerFill: "#4472C4",
@@ -1087,6 +1067,11 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     },
     sizes: { title: 14, section: 12, body: 11, header: 10, note: 9 }
   };
+  function toRgb(hex) {
+    const h = hex.replace("#", "");
+    const at = (i) => Math.round(parseInt(h.slice(i, i + 2), 16) / 255 * 1e4) / 1e4;
+    return { red: at(0), green: at(2), blue: at(4) };
+  }
   var ROLES = {
     title: { size: "title", bold: true },
     note: { size: "note", color: "muted" },
@@ -1097,6 +1082,20 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     input: { size: "body", bold: true, fill: "inputFill", box: true, align: "CENTER" },
     body: { size: "body", box: true },
     label: { size: "body", bold: true, box: true, align: "CENTER" }
+  };
+
+  // core/palette.js
+  var COLORS = {
+    line: "#202124",
+    // ブラケットの枝
+    header: "#F1F3F4",
+    winner: "#D93025",
+    // 勝者セル・勝ち上がり経路
+    loser: "#9AA0A6",
+    resultPending: "#FFF2CC",
+    // 未入力の結果セル（黄）
+    resultDone: "#E2F0D9"
+    // 入力済みの結果セル（緑）
   };
 
   // core/formatting.js
@@ -1189,6 +1188,8 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     const requests = [];
     for (const { sheetId, grid } of sheets) {
       requests.push(updateCellsRequest(sheetId, grid));
+      requests.push(commonFormatRequest(sheetId, grid));
+      requests.push(...boxBorderRequests(sheetId, grid));
       for (const [col, width] of grid.columns) {
         requests.push({
           updateDimensionProperties: {
@@ -1274,19 +1275,17 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     const v = cell.value;
     const value = v !== "" && v != null ? String(v).startsWith("=") ? { formulaValue: String(v) } : { stringValue: String(v) } : null;
     const role = (_b = ROLES[style.role]) != null ? _b : null;
-    const text = { fontFamily: THEME.font };
+    const text = {};
     if (role) {
       if (role.bold) text.bold = true;
       if (role.size) text.fontSize = THEME.sizes[role.size];
       if (role.color) text.foregroundColor = toRgb(THEME.colors[role.color]);
       if (role.fill) fmt.backgroundColor = toRgb(THEME.colors[role.fill]);
       if (role.align) fmt.horizontalAlignment = role.align;
-      if (role.box) fmt.borders = boxBorders();
     }
     if (style.bold) text.bold = true;
     if (style.size) text.fontSize = style.size;
-    fmt.textFormat = text;
-    fmt.verticalAlignment = "MIDDLE";
+    if (Object.keys(text).length) fmt.textFormat = text;
     if (style.input) {
       fmt.backgroundColor = toRgb(THEME.colors.inputFill);
       fmt.numberFormat = { type: "TEXT" };
@@ -1295,9 +1294,57 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     if (value) out.userEnteredValue = value;
     return out;
   }
-  function boxBorders() {
+  function commonFormatRequest(sheetId, grid) {
+    return {
+      repeatCell: {
+        range: { sheetId, startRowIndex: 0, endRowIndex: grid.maxRow, startColumnIndex: 0, endColumnIndex: grid.maxCol },
+        cell: { userEnteredFormat: { textFormat: { fontFamily: THEME.font }, verticalAlignment: "MIDDLE" } },
+        fields: "userEnteredFormat.textFormat.fontFamily,userEnteredFormat.verticalAlignment"
+      }
+    };
+  }
+  function boxBorderRequests(sheetId, grid) {
+    var _a, _b;
+    const boxed = /* @__PURE__ */ new Set();
+    for (const c of grid.cells.values()) {
+      if ((_b = ROLES[(_a = c.style) == null ? void 0 : _a.role]) == null ? void 0 : _b.box) boxed.add(`${c.row},${c.col}`);
+    }
     const line = { style: "SOLID", color: toRgb(THEME.colors.grid) };
-    return { top: line, bottom: line, left: line, right: line };
+    const out = [];
+    const taken = /* @__PURE__ */ new Set();
+    const key = (r, c) => `${r},${c}`;
+    const cells = [...boxed].map((k) => k.split(",").map(Number)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    for (const [r0, c0] of cells) {
+      if (taken.has(key(r0, c0))) continue;
+      let c1 = c0;
+      while (boxed.has(key(r0, c1 + 1)) && !taken.has(key(r0, c1 + 1))) c1 += 1;
+      let r1 = r0;
+      for (; ; ) {
+        const nr = r1 + 1;
+        let ok = true;
+        for (let c = c0; c <= c1; c++) {
+          if (!boxed.has(key(nr, c)) || taken.has(key(nr, c))) {
+            ok = false;
+            break;
+          }
+        }
+        if (!ok) break;
+        r1 = nr;
+      }
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) taken.add(key(r, c));
+      out.push({
+        updateBorders: {
+          range: { sheetId, startRowIndex: r0 - 1, endRowIndex: r1, startColumnIndex: c0 - 1, endColumnIndex: c1 },
+          top: line,
+          bottom: line,
+          left: line,
+          right: line,
+          innerVertical: line,
+          innerHorizontal: line
+        }
+      });
+    }
+    return out;
   }
   function validationRequests(sheetId, grid) {
     var _a;

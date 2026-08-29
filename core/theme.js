@@ -8,6 +8,7 @@ export const THEME = {
   font: 'Hiragino Sans',
   colors: {
     grid: '#9CA3AF',        // 細い格子罫線
+    line: '#202124',        // ブラケットの枝線（格子より濃くして経路を目立たせる）
     accent: '#1F4E79',      // 見出しの文字・強調罫線
     headerFill: '#4472C4',  // 表ヘッダの帯
     headerText: '#FFFFFF',
@@ -23,6 +24,13 @@ export const THEME = {
 };
 
 /** 役割ごとの書式。payload がこれを userEnteredFormat へ写す。 */
+/** 色成分は4桁で丸める。19桁の浮動小数を持つとペイロードが無駄に膨らむ。見た目は変わらない。 */
+export function toRgb(hex) {
+  const h = hex.replace('#', '');
+  const at = (i) => Math.round((parseInt(h.slice(i, i + 2), 16) / 255) * 10000) / 10000;
+  return { red: at(0), green: at(2), blue: at(4) };
+}
+
 export const ROLES = {
   title:       { size: 'title',   bold: true },
   note:        { size: 'note',    color: 'muted' },

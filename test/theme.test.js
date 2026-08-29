@@ -15,14 +15,22 @@ const cellsOf = (payload, sheetId) =>
 const hex = (c) =>
   '#' + [c.red, c.green, c.blue].map((x) => Math.round((x ?? 0) * 255).toString(16).padStart(2, '0')).join('').toUpperCase();
 
-test('全セルが実物と同じフォントを指定する', () => {
+test('各タブにフォントが一括で指定される', () => {
   // 指定が無いと環境依存の既定フォントになり、実物のゴシック体と揃わない。
+  // 1セルずつ持たせるとペイロードが膨れるので、シート全体へ repeatCell で当てる。
   for (const format of ['single-elimination', 'double-elimination', 'full-placement']) {
     const p = buildSpreadsheetPayload(make({ format, teams: 8 }));
-    for (const sheetId of [0, 1, 2]) {
-      for (const c of cellsOf(p, sheetId)) {
-        assert.equal(c.userEnteredFormat.textFormat.fontFamily, THEME.font, `${format} sheet${sheetId}`);
-      }
+    for (const sheetId of [0, 1, 2, 3]) {
+      const rc = p.requests.find((r) => r.repeatCell?.range.sheetId === sheetId);
+      assert.ok(rc, `${format} sheet${sheetId}: 一括指定が無い`);
+      assert.equal(rc.repeatCell.cell.userEnteredFormat.textFormat.fontFamily, THEME.font);
+      assert.equal(rc.repeatCell.cell.userEnteredFormat.verticalAlignment, 'MIDDLE');
+      // fields を絞らないと、直前の updateCells で入れた地色や太字を消してしまう
+      assert.match(rc.repeatCell.fields, /^userEnteredFormat\.textFormat\.fontFamily,userEnteredFormat\.verticalAlignment$/);
+      // updateCells より後でなければ上書きされる
+      const iCells = p.requests.findIndex((r) => r.updateCells?.range.sheetId === sheetId);
+      const iRepeat = p.requests.indexOf(rc);
+      assert.ok(iRepeat > iCells, `${format} sheet${sheetId}: repeatCell が updateCells より前にある`);
     }
   }
 });
@@ -51,17 +59,43 @@ test('セクション見出しが淡青地に紺文字になる', () => {
   }
 });
 
-test('枠のあるセルは四辺すべてに細いグレー罫線が付く', () => {
+test('格子の罫線が矩形単位でまとめて引かれる', () => {
   // 実物は全内容セルが格子で囲われている。これが無いと「素朴」に見える。
+  // セル単位で出すと色オブジェクトが繰り返されてペイロードが膨れるため、矩形にまとめる。
   const p = buildSpreadsheetPayload(make());
-  const boxed = cellsOf(p, 0).filter((c) => c.userEnteredFormat.borders);
-  assert.ok(boxed.length > 10, `枠付きセルが少なすぎる: ${boxed.length}`);
-  for (const c of boxed) {
-    const b = c.userEnteredFormat.borders;
-    for (const side of ['top', 'bottom', 'left', 'right']) {
+  const grids = p.requests
+    .map((r) => r.updateBorders)
+    .filter((b) => b && b.range.sheetId === 0 && b.innerVertical);
+  assert.ok(grids.length > 3, `格子の罫線が少なすぎる: ${grids.length}`);
+  for (const b of grids) {
+    for (const side of ['top', 'bottom', 'left', 'right', 'innerVertical', 'innerHorizontal']) {
       assert.equal(b[side].style, 'SOLID', side);
       assert.equal(hex(b[side].color), THEME.colors.grid, side);
     }
+  }
+  // 表は複数行にまたがる矩形として1回で出るはず（1行ずつ出ていない）
+  assert.ok(grids.some((b) => b.range.endRowIndex - b.range.startRowIndex > 1), '矩形にまとまっていない');
+  // 同じセルを2度囲わない
+  const seen = new Set();
+  for (const b of grids) {
+    for (let r = b.range.startRowIndex; r < b.range.endRowIndex; r++) {
+      for (let c = b.range.startColumnIndex; c < b.range.endColumnIndex; c++) {
+        assert.ok(!seen.has(`${r},${c}`), `重複: ${r},${c}`);
+        seen.add(`${r},${c}`);
+      }
+    }
+  }
+});
+
+test('枝線と格子で色を使い分ける', () => {
+  // 枝線は濃い線、格子は細いグレー。同じ色だとブラケットの経路が沈む。
+  const p = buildSpreadsheetPayload(make());
+  const branch = p.requests.map((r) => r.updateBorders)
+    .filter((b) => b && b.range.sheetId === 0 && !b.innerVertical);
+  assert.ok(branch.length > 0, '枝線が無い');
+  for (const b of branch) {
+    const side = ['top', 'bottom', 'left', 'right'].find((x) => b[x]);
+    assert.equal(hex(b[side].color), THEME.colors.line);
   }
 });
 

@@ -29,15 +29,29 @@ function sheetHtml(sheetId, title) {
       widths.set(d.range.startIndex, d.properties.pixelSize);
     }
   }
-  // 罫線リクエストを (row,col,side) で引けるようにする
+  // 罫線リクエストを (row,col,side) で引けるようにする。
+  // 外周（top/bottom/left/right）は範囲の縁だけ、内側（innerVertical/innerHorizontal）は
+  // セル間に引かれるので、それぞれ対象セルを分けて展開する。
   const edge = new Map();
+  const put = (rr, cc, side, color, weight) => {
+    const k = `${rr},${cc},${side}`;
+    const cur = edge.get(k);
+    if (!cur || cur.weight < weight) edge.set(k, { color, weight });
+  };
   for (const r of payload.requests) {
     const b = r.updateBorders;
     if (!b || b.range.sheetId !== sheetId) continue;
-    const side = ['top', 'bottom', 'left', 'right'].find((s) => b[s]);
-    for (let rr = b.range.startRowIndex; rr < b.range.endRowIndex; rr++) {
-      for (let cc = b.range.startColumnIndex; cc < b.range.endColumnIndex; cc++) {
-        edge.set(`${rr},${cc},${side}`, rgb(b[side].color));
+    const { startRowIndex: r0, endRowIndex: r1, startColumnIndex: c0, endColumnIndex: c1 } = b.range;
+    const isGrid = Boolean(b.innerVertical || b.innerHorizontal);
+    const w = isGrid ? 1 : 2; // 枝線は格子より優先して太く描く
+    for (let rr = r0; rr < r1; rr++) {
+      for (let cc = c0; cc < c1; cc++) {
+        if (b.top && rr === r0) put(rr, cc, 'top', rgb(b.top.color), w);
+        if (b.bottom && rr === r1 - 1) put(rr, cc, 'bottom', rgb(b.bottom.color), w);
+        if (b.left && cc === c0) put(rr, cc, 'left', rgb(b.left.color), w);
+        if (b.right && cc === c1 - 1) put(rr, cc, 'right', rgb(b.right.color), w);
+        if (b.innerVertical && cc < c1 - 1) put(rr, cc, 'right', rgb(b.innerVertical.color), w);
+        if (b.innerHorizontal && rr < r1 - 1) put(rr, cc, 'bottom', rgb(b.innerHorizontal.color), w);
       }
     }
   }
@@ -72,10 +86,8 @@ function sheetHtml(sheetId, title) {
         f.horizontalAlignment === 'CENTER' ? 'text-align:center' : '',
       ];
       for (const side of ['top', 'bottom', 'left', 'right']) {
-        const box = f.borders?.[side];
-        const line = edge.get(`${rr},${cc},${side}`);
-        if (line) st.push(`border-${side}:2px solid ${line}`);
-        else if (box) st.push(`border-${side}:1px solid ${rgb(box.color)}`);
+        const e = edge.get(`${rr},${cc},${side}`);
+        if (e) st.push(`border-${side}:${e.weight}px solid ${e.color}`);
       }
       const sp = spanOf(rr, cc);
       const attrs = sp ? ` colspan="${sp.endColumnIndex - sp.startColumnIndex}"` : '';
