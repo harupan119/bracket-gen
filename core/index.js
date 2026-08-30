@@ -30,7 +30,12 @@ export function buildTournament(config) {
     courts,
     strategy: tournament.avoidBackToBack ? avoidBackToBack : dependencyOnly,
   });
-  tournament.warnings = warningsFor({ format, teams, courts });
+  // 枠数が決まってからでないと開催時間の見積もりが出せない
+  tournament.warnings = warningsFor({
+    format, teams, courts,
+    matches: tournament.matches.length,
+    slots: tournament.slots.length,
+  });
   return tournament;
 }
 

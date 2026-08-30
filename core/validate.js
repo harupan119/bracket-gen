@@ -27,14 +27,38 @@ export function validateFullPlacement(teams) {
   }
 }
 
-// 生成前に出す警告。エラーではないが運営に影響する事実。
-export function warningsFor({ format, teams, courts }) {
+/**
+ * 生成後に出す警告。エラーではないが、当日の運営に効く事実。
+ *
+ * 枠数は開催の長さに直結する。枠は「同時に進む試合のまとまり」なので、
+ * 1試合の所要時間 × 枠数 が実質の開催時間になる（コート数を増やしても枠は減るが、
+ * 減り方は依存関係で頭打ちになる）。
+ */
+export function warningsFor({ format, teams, courts, matches, slots }) {
   const w = [];
-  if (format === 'full-placement') {
-    const total = (teams * Math.log2(teams)) / 2;
-    if (total >= 32) {
-      w.push(`${teams}チームの完全順位決定は全${total}試合になります。コート${courts}面では枠数が多くなるため、開催時間を確認してください。`);
-    }
+
+  if (format === 'full-placement' && matches >= 32) {
+    w.push(
+      `${teams}チームの完全順位決定は全${matches}試合になります。` +
+        `全員が同じ試合数を戦う形式なので、試合数はチーム数に対して急に増えます。`
+    );
   }
+
+  if (slots >= 12) {
+    // 1試合20分・転換5分をざっくりの目安にする
+    const hours = Math.round((slots * 25) / 60 * 10) / 10;
+    w.push(
+      `全${slots}枠になります。1試合20分＋転換5分なら約${hours}時間かかる見込みです。` +
+        `半日で終わらせたい場合はコート数を増やすか、チーム数か形式を見直してください。`
+    );
+  }
+
+  if (courts >= teams / 2) {
+    w.push(
+      `コート${courts}面はチーム数（${teams}）に対して多いため、全チームが同時に動きます。` +
+        `連戦を避けにくくなります。`
+    );
+  }
+
   return w;
 }

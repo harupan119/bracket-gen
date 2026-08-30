@@ -79,13 +79,23 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       );
     }
   }
-  function warningsFor({ format, teams, courts }) {
+  function warningsFor({ format, teams, courts, matches, slots }) {
     const w = [];
-    if (format === "full-placement") {
-      const total = teams * Math.log2(teams) / 2;
-      if (total >= 32) {
-        w.push(`${teams}\u30C1\u30FC\u30E0\u306E\u5B8C\u5168\u9806\u4F4D\u6C7A\u5B9A\u306F\u5168${total}\u8A66\u5408\u306B\u306A\u308A\u307E\u3059\u3002\u30B3\u30FC\u30C8${courts}\u9762\u3067\u306F\u67A0\u6570\u304C\u591A\u304F\u306A\u308B\u305F\u3081\u3001\u958B\u50AC\u6642\u9593\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044\u3002`);
-      }
+    if (format === "full-placement" && matches >= 32) {
+      w.push(
+        `${teams}\u30C1\u30FC\u30E0\u306E\u5B8C\u5168\u9806\u4F4D\u6C7A\u5B9A\u306F\u5168${matches}\u8A66\u5408\u306B\u306A\u308A\u307E\u3059\u3002\u5168\u54E1\u304C\u540C\u3058\u8A66\u5408\u6570\u3092\u6226\u3046\u5F62\u5F0F\u306A\u306E\u3067\u3001\u8A66\u5408\u6570\u306F\u30C1\u30FC\u30E0\u6570\u306B\u5BFE\u3057\u3066\u6025\u306B\u5897\u3048\u307E\u3059\u3002`
+      );
+    }
+    if (slots >= 12) {
+      const hours = Math.round(slots * 25 / 60 * 10) / 10;
+      w.push(
+        `\u5168${slots}\u67A0\u306B\u306A\u308A\u307E\u3059\u30021\u8A66\u540820\u5206\uFF0B\u8EE2\u63DB5\u5206\u306A\u3089\u7D04${hours}\u6642\u9593\u304B\u304B\u308B\u898B\u8FBC\u307F\u3067\u3059\u3002\u534A\u65E5\u3067\u7D42\u308F\u3089\u305B\u305F\u3044\u5834\u5408\u306F\u30B3\u30FC\u30C8\u6570\u3092\u5897\u3084\u3059\u304B\u3001\u30C1\u30FC\u30E0\u6570\u304B\u5F62\u5F0F\u3092\u898B\u76F4\u3057\u3066\u304F\u3060\u3055\u3044\u3002`
+      );
+    }
+    if (courts >= teams / 2) {
+      w.push(
+        `\u30B3\u30FC\u30C8${courts}\u9762\u306F\u30C1\u30FC\u30E0\u6570\uFF08${teams}\uFF09\u306B\u5BFE\u3057\u3066\u591A\u3044\u305F\u3081\u3001\u5168\u30C1\u30FC\u30E0\u304C\u540C\u6642\u306B\u52D5\u304D\u307E\u3059\u3002\u9023\u6226\u3092\u907F\u3051\u306B\u304F\u304F\u306A\u308A\u307E\u3059\u3002`
+      );
     }
     return w;
   }
@@ -558,7 +568,13 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       courts,
       strategy: tournament.avoidBackToBack ? avoidBackToBack : dependencyOnly
     });
-    tournament.warnings = warningsFor({ format, teams, courts });
+    tournament.warnings = warningsFor({
+      format,
+      teams,
+      courts,
+      matches: tournament.matches.length,
+      slots: tournament.slots.length
+    });
     return tournament;
   }
 
