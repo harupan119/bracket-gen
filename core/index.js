@@ -1,7 +1,7 @@
 import { buildFullPlacement } from './formats/full-placement.js';
 import { buildDoubleElimination } from './formats/double-elimination.js';
 import { buildSingleElimination } from './formats/single-elimination.js';
-import { scheduleMatches } from './schedule.js';
+import { scheduleMatches, dependencyOnly, avoidBackToBack } from './schedule.js';
 import { warningsFor } from './validate.js';
 import { getScoring } from './scoring.js';
 
@@ -23,9 +23,18 @@ export function buildTournament(config) {
   tournament.title = config.title ?? '';
   tournament.scoring = scoring;
   tournament.courts = courts;
-  tournament.slots = scheduleMatches(tournament, { courts });
+  // 連戦回避は枠数（＝開催の長さ）と引き換えになるので、運営が選べるようにする。
+  // 連戦が増えることは無いが、枠が1〜2増えることがある。
+  tournament.avoidBackToBack = config.avoidBackToBack ?? true;
+  tournament.slots = scheduleMatches(tournament, {
+    courts,
+    strategy: tournament.avoidBackToBack ? avoidBackToBack : dependencyOnly,
+  });
   tournament.warnings = warningsFor({ format, teams, courts });
   return tournament;
 }
 
-export { buildFullPlacement, buildDoubleElimination, buildSingleElimination, scheduleMatches };
+export {
+  buildFullPlacement, buildDoubleElimination, buildSingleElimination,
+  scheduleMatches, dependencyOnly, avoidBackToBack,
+};

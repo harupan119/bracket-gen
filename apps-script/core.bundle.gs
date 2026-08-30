@@ -28,6 +28,7 @@ var BracketGen = (() => {
     TABS: () => TABS,
     buildSpreadsheetPayload: () => buildSpreadsheetPayload,
     buildTournament: () => buildTournament,
+    countBackToBack: () => countBackToBack,
     getScoring: () => getScoring,
     warningsFor: () => warningsFor
   });
@@ -449,6 +450,52 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     }
     return slots;
   }
+  function countBackToBack(matches, slots) {
+    const at = /* @__PURE__ */ new Map();
+    slots.forEach((batch, i) => batch.forEach((m) => at.set(m.id, i)));
+    let tight = 0;
+    for (const m of matches) {
+      const deps = [m.left, m.right].filter((r) => r.type !== "team").map((r) => at.get(r.match));
+      if (deps.length && at.get(m.id) - Math.max(...deps) === 1) tight += 1;
+    }
+    return tight;
+  }
+  function greedy(matches, courts, minGap) {
+    const placed = /* @__PURE__ */ new Map();
+    const remaining = [...matches];
+    const slots = [];
+    const gapOf = (m, k) => {
+      const deps = [m.left, m.right].filter((r) => r.type !== "team").map((r) => placed.get(r.match));
+      if (deps.some((d) => d === void 0)) return -1;
+      return deps.length ? k - Math.max(...deps) : Infinity;
+    };
+    while (remaining.length > 0) {
+      const k = slots.length;
+      const pick = (need) => {
+        const batch2 = [];
+        for (const m of remaining) {
+          if (batch2.length >= courts) break;
+          if (gapOf(m, k) >= need) batch2.push(m);
+        }
+        return batch2;
+      };
+      let batch = pick(minGap);
+      if (batch.length === 0) batch = pick(1);
+      if (batch.length === 0) throw new Error("\u67A0\u5272\u5F53\u304C\u9032\u307F\u307E\u305B\u3093\u3002\u8A66\u5408\u306E\u4F9D\u5B58\u95A2\u4FC2\u304C\u5FAA\u74B0\u3057\u3066\u3044\u307E\u3059\u3002");
+      for (const m of batch) {
+        remaining.splice(remaining.indexOf(m), 1);
+        placed.set(m.id, k);
+      }
+      slots.push(batch);
+    }
+    return slots;
+  }
+  function avoidBackToBack(matches, { courts, gaps = [1, 2, 3], maxExtraSlots = 2 }) {
+    const candidates = gaps.map((g) => greedy(matches, courts, g)).map((slots) => ({ slots, tight: countBackToBack(matches, slots) }));
+    const shortest = Math.min(...candidates.map((c) => c.slots.length));
+    const affordable = candidates.filter((c) => c.slots.length - shortest <= maxExtraSlots);
+    return affordable.sort((a, b) => a.tight - b.tight || a.slots.length - b.slots.length)[0].slots;
+  }
   function scheduleMatches(tournament, { courts, strategy = dependencyOnly }) {
     if (!Number.isInteger(courts) || courts < 1) {
       throw new Error(`courts \u306F1\u4EE5\u4E0A\u306E\u6574\u6570\u3067\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044: ${courts}`);
@@ -494,7 +541,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     "single-elimination": buildSingleElimination
   };
   function buildTournament(config) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     const { format, teams, courts = 1 } = config;
     const build = BUILDERS[format];
     if (!build) {
@@ -506,7 +553,11 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     tournament.title = (_c = config.title) != null ? _c : "";
     tournament.scoring = scoring;
     tournament.courts = courts;
-    tournament.slots = scheduleMatches(tournament, { courts });
+    tournament.avoidBackToBack = (_d = config.avoidBackToBack) != null ? _d : true;
+    tournament.slots = scheduleMatches(tournament, {
+      courts,
+      strategy: tournament.avoidBackToBack ? avoidBackToBack : dependencyOnly
+    });
     tournament.warnings = warningsFor({ format, teams, courts });
     return tournament;
   }
@@ -696,7 +747,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       g.set(TEAM_INPUT_ROW + i, 2, "", { role: "input", input: true });
     });
     let row = TEAM_INPUT_ROW + tournament.teams + 1;
-    g.set(row, 1, "\u25A0 \u9032\u884C\u9806\uFF08\u67A0\u306E\u4E2D\u306E\u8A66\u5408\u306F\u540C\u6642\u306B\u9032\u884C\u3002\u67A0\u304C\u7D42\u308F\u3063\u305F\u3089\u6B21\u306E\u67A0\u3078\uFF09", { role: "section" });
+    g.set(row, 1, `\u25A0 \u9032\u884C\u9806\uFF08\u67A0\u306E\u4E2D\u306E\u8A66\u5408\u306F\u540C\u6642\u306B\u9032\u884C\u3002\u67A0\u304C\u7D42\u308F\u3063\u305F\u3089\u6B21\u306E\u67A0\u3078\uFF09${tournament.avoidBackToBack ? "\u3000\u203B\u9023\u6226\u3092\u306A\u308B\u3079\u304F\u907F\u3051\u3066\u4E26\u3079\u3066\u3044\u307E\u3059" : ""}`, { role: "section" });
     g.merge(row, 1, row, 6);
     row += 1;
     ["\u67A0", "\u30B3\u30FC\u30C8", "\u8A66\u5408", "\u5BFE\u6226\u30AB\u30FC\u30C9", "\u7D50\u679C", "\u52DD\u8005"].forEach((h, i) => g.set(row, i + 1, h, { role: "tableHeader" }));

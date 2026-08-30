@@ -51,6 +51,9 @@
 
     <div class="opt"><label style="font-weight:400"><input type="checkbox" id="thirdPlace" checked /> 3位決定戦を行う（シングルのみ）</label></div>
     <div class="opt"><label style="font-weight:400"><input type="checkbox" id="bracketReset" checked /> 決勝リセットを行う（ダブルのみ）</label></div>
+    <div class="opt"><label style="font-weight:400"><input type="checkbox" id="avoidBackToBack" checked /> 連戦をなるべく避ける</label>
+      <div class="hint">同じチームが続けて試合に入らないよう並べます。枠が1〜2増えることがあります。</div>
+    </div>
 
     <button id="go">作成する</button>
     <div id="status"></div>
@@ -100,6 +103,7 @@
           courts: parseInt(document.getElementById('courts').value, 10),
           title: document.getElementById('title').value,
           scoring: document.getElementById('scoring').value,
+          avoidBackToBack: document.getElementById('avoidBackToBack').checked,
           options: {
             thirdPlace: document.getElementById('thirdPlace').checked,
             bracketReset: document.getElementById('bracketReset').checked

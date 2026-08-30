@@ -128,7 +128,7 @@ export function layoutProgressSheet(tournament) {
   });
 
   let row = TEAM_INPUT_ROW + tournament.teams + 1;
-  g.set(row, 1, '■ 進行順（枠の中の試合は同時に進行。枠が終わったら次の枠へ）', { role: 'section' });
+  g.set(row, 1, `■ 進行順（枠の中の試合は同時に進行。枠が終わったら次の枠へ）${tournament.avoidBackToBack ? '　※連戦をなるべく避けて並べています' : ''}`, { role: 'section' });
   g.merge(row, 1, row, 6);
   row += 1;
   ['枠', 'コート', '試合', '対戦カード', '結果', '勝者'].forEach((h, i) => g.set(row, i + 1, h, { role: 'tableHeader' }));
