@@ -1,5 +1,5 @@
 import { Grid } from './grid.js';
-import { getScoring } from './scoring.js';
+import { getScoring, validScore } from './scoring.js';
 import { eliminationRule } from './layout.js';
 import { writeStandings, groupRankFormula } from './standings.js';
 
@@ -82,9 +82,12 @@ export function layoutControlSheet(tournament) {
       g.set(r, 3, side(m.right));
     }
     g.set(r, 4, `=${cellRefs.mobileInput(i)}`);
-    g.set(r, 5, `=IF($D${r}="","",IF(${won},$B${r},$C${r}))`);
-    g.set(r, 6, `=IF($D${r}="","",IF(${won},$C${r},$B${r}))`);
-    g.set(r, 7, `=IF($D${r}="","未入力","確定")`);
+    const valid = validScore(sc, `$D${r}`);
+    g.set(r, 5, `=IF(NOT(${valid}),"",IF(${won},$B${r},$C${r}))`);
+    g.set(r, 6, `=IF(NOT(${valid}),"",IF(${won},$C${r},$B${r}))`);
+    // 想定外の値を「確定」にしない。貼り付けや手打ちで選択肢にない値が入ると、
+    // 勝敗判定が「左の勝ちではない＝右の勝ち」と黙って解釈してしまう。
+    g.set(r, 7, `=IF($D${r}="","未入力",IF(${validScore(sc, `$D${r}`)},"確定","入力エラー"))`);
   });
   // 予選がある形式は、順位表も同じ非表示タブに置く
   if (tournament.groups) writeStandings(g, tournament);

@@ -153,3 +153,24 @@ test('シングル／ダブルで「各チームN試合」と書かない', asyn
   const t2 = [...layoutProgressSheet(fp).cells.values()].map((c) => String(c.value));
   assert.ok(t2.some((x) => /各チーム3試合/.test(x)), '完全順位決定では明記する');
 });
+
+test('選択肢にない値は「入力エラー」にし、勝敗を判定しない', async () => {
+  // 実シートで発覚: 3本勝負のシートに 5セットマッチの "3-1" を入れると、
+  // 「左の勝ちではない＝右の勝ち」と黙って解釈され、状態は「確定」のままだった。
+  // 日付に化けた値（46082 のようなシリアル）も同じ経路で通ってしまう。
+  const { getScoring } = await import('../core/scoring.js');
+  for (const name of ['win-loss', 'sets-of-3', 'sets-of-5']) {
+    const t = make({ scoring: name });
+    const g = layoutControlSheet(t);
+    const r = cellRefs.controlRow(0);
+    const opts = getScoring(name).options;
+    for (const col of [5, 6]) {
+      const f = g.cells.get(`${r},${col}`).value;
+      assert.match(f, /^=IF\(NOT\(OR\(/, `${name}: 妥当性を先に見ていない`);
+      for (const o of opts) assert.ok(f.includes(`="${o}"`), `${name}: 選択肢 ${o} が条件に無い`);
+    }
+    const state = g.cells.get(`${r},7`).value;
+    assert.match(state, /"入力エラー"/, `${name}: エラー状態が無い`);
+    assert.match(state, /"未入力"/, `${name}: 未入力と区別していない`);
+  }
+});

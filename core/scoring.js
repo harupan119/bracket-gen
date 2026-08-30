@@ -22,6 +22,11 @@ export const SCORING = {
   },
 };
 
+/** 入力値が選択肢のどれかであることを確かめる式。想定外の値を「確定」にしないため。 */
+export function validScore(sc, cell) {
+  return `OR(${sc.options.map((o) => `${cell}="${o}"`).join(',')})`;
+}
+
 export function getScoring(name) {
   const s = SCORING[name];
   if (!s) {

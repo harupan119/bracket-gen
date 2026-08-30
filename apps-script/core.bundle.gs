@@ -729,6 +729,9 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       leftWins: (cell) => `OR(${cell}="3-0",${cell}="3-1",${cell}="3-2")`
     }
   };
+  function validScore(sc, cell) {
+    return `OR(${sc.options.map((o) => `${cell}="${o}"`).join(",")})`;
+  }
   function getScoring(name) {
     const s = SCORING[name];
     if (!s) {
@@ -1015,9 +1018,10 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         g.set(r, 3, side(m.right));
       }
       g.set(r, 4, `=${cellRefs.mobileInput(i)}`);
-      g.set(r, 5, `=IF($D${r}="","",IF(${won},$B${r},$C${r}))`);
-      g.set(r, 6, `=IF($D${r}="","",IF(${won},$C${r},$B${r}))`);
-      g.set(r, 7, `=IF($D${r}="","\u672A\u5165\u529B","\u78BA\u5B9A")`);
+      const valid = validScore(sc, `$D${r}`);
+      g.set(r, 5, `=IF(NOT(${valid}),"",IF(${won},$B${r},$C${r}))`);
+      g.set(r, 6, `=IF(NOT(${valid}),"",IF(${won},$C${r},$B${r}))`);
+      g.set(r, 7, `=IF($D${r}="","\u672A\u5165\u529B",IF(${validScore(sc, `$D${r}`)},"\u78BA\u5B9A","\u5165\u529B\u30A8\u30E9\u30FC"))`);
     });
     if (tournament.groups) writeStandings(g, tournament);
     return g;
