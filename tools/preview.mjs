@@ -55,6 +55,27 @@ function sheetHtml(sheetId, title) {
       }
     }
   }
+  // 書式は repeatCell で範囲ごとに当たるので、セル単位へ展開してから描く。
+  // updateCells に書式が入っていた頃の作りのままだと、地色も罫線も出ない。
+  const fmt = new Map();
+  for (const r of payload.requests) {
+    const rc = r.repeatCell;
+    if (!rc || rc.range.sheetId !== sheetId) continue;
+    const f = rc.cell.userEnteredFormat ?? {};
+    for (let rr = rc.range.startRowIndex; rr < rc.range.endRowIndex; rr++) {
+      for (let cc = rc.range.startColumnIndex; cc < rc.range.endColumnIndex; cc++) {
+        const k = `${rr},${cc}`;
+        const cur = fmt.get(k) ?? {};
+        // 後から当たるものが勝つ（fields で絞った上書きと同じ順序）
+        fmt.set(k, {
+          ...cur,
+          ...f,
+          textFormat: { ...(cur.textFormat ?? {}), ...(f.textFormat ?? {}) },
+        });
+      }
+    }
+  }
+
   const merges = payload.requests
     .filter((r) => r.mergeCells?.range.sheetId === sheetId)
     .map((r) => r.mergeCells.range);
@@ -73,7 +94,7 @@ function sheetHtml(sheetId, title) {
     html += '<tr>';
     (row.values ?? []).forEach((cell, cc) => {
       if (covered.has(`${rr},${cc}`)) return;
-      const f = cell?.userEnteredFormat ?? {};
+      const f = fmt.get(`${rr},${cc}`) ?? {};
       const t = f.textFormat ?? {};
       const v = cell?.userEnteredValue ?? {};
       const text = v.stringValue ?? (v.formulaValue ? formulaLabel(v.formulaValue) : '');

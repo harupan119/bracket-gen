@@ -18,7 +18,23 @@ import { getScoring } from './scoring.js';
 const W_WEIGHT = 1e6;
 const H2H_WEIGHT = 1e3;
 
-export const STANDINGS_START_GAP = 2;
+const GAP = 2;
+const COLS = { team: 1, wins: 2, got: 3, lost: 4, h2h: 5, score: 6, rank: 7, beat: 9 };
+
+/**
+ * 順位表の配置を、グリッドを作らずに算出する。
+ * ブラケットの出場者（「A組1位」）も順位表を参照するので、
+ * 書き込む側と参照する側で同じ計算を使う必要がある。
+ */
+export function standingsLayout(tournament) {
+  // 試合行の直後から始める
+  let row = cellRefs.controlRow(tournament.matches.length) + GAP;
+  return tournament.groups.map((group) => {
+    const block = { group: group.index, label: group.label, head: row, top: row + 1, size: group.teams.length, cols: COLS };
+    row = block.top + block.size + GAP;
+    return block;
+  });
+}
 
 /** 組の予選試合が試合管理タブの何行目から何行目までにあるか。 */
 export function groupMatchRows(tournament, groupIndex) {
@@ -33,21 +49,18 @@ export function groupMatchRows(tournament, groupIndex) {
  * 順位表のブロックを試合管理タブへ書く。非表示タブなので見た目は問わない。
  * 返り値は、各組の先頭行と列の対応。トーナメント表側はここを参照する。
  */
-export function writeStandings(g, tournament, startRow) {
+export function writeStandings(g, tournament) {
   const sc = getScoring(tournament.scoring);
   const hasSets = sc.options.some((o) => /^\d+-\d+$/.test(o));
-  const blocks = [];
-  let row = startRow;
+  const blocks = standingsLayout(tournament);
 
-  for (const group of tournament.groups) {
+  for (const block of blocks) {
+    const group = tournament.groups[block.group];
     const { first, last } = groupMatchRows(tournament, group.index);
-    const n = group.teams.length;
-    const head = row;
-    const cols = { team: 1, wins: 2, got: 3, lost: 4, h2h: 5, score: 6, rank: 7, beat: 9 };
+    const n = block.size;
+    const { head, top, cols } = block;
 
     g.set(head, cols.team, `${group.label} 順位表`, { helper: true });
-    row += 1;
-    const top = row; // チーム行の先頭
 
     group.teams.forEach((teamIndex, i) => {
       const r = top + i;
@@ -100,15 +113,13 @@ export function writeStandings(g, tournament, startRow) {
       g.set(r, cols.rank, `=RANK(${col(cols.score)}${r},${scoreRange})`, { helper: true });
     });
 
-    blocks.push({ group: group.index, top, size: n, cols });
-    row = top + n + STANDINGS_START_GAP;
   }
   return blocks;
 }
 
 /** 「A組1位」のチーム名を引く数式。 */
-export function groupRankFormula(blocks, groupIndex, rank) {
-  const b = blocks.find((x) => x.group === groupIndex);
+export function groupRankFormula(tournament, groupIndex, rank) {
+  const b = standingsLayout(tournament).find((x) => x.group === groupIndex);
   const teams = `'${TABS.control}'!${col(b.cols.team)}$${b.top}:${col(b.cols.team)}$${b.top + b.size - 1}`;
   const ranks = `'${TABS.control}'!${col(b.cols.rank)}$${b.top}:${col(b.cols.rank)}$${b.top + b.size - 1}`;
   return `IFERROR(INDEX(${teams},MATCH(${rank},${ranks},0)),"")`;

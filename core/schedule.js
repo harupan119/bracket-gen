@@ -9,14 +9,34 @@
  *   連戦回避が必要になったら avoidBackToBack を実装して渡す。
  */
 
+/**
+ * その試合を組むために先に終わっていなければならない試合のID。
+ *
+ * 勝者/敗者の参照はその試合そのもの。
+ * 「A組1位」のような順位参照は、その組の予選が全部終わらないと確定しないので、
+ * 組の全試合を依存として返す。ここを取りこぼすと、順位参照が
+ * 「依存の無い試合」と誤解され、予選より前に組まれてしまう。
+ */
+export function dependenciesOf(match, allMatches) {
+  const out = [];
+  for (const ref of [match.left, match.right]) {
+    if (ref.type === 'winner' || ref.type === 'loser') out.push(ref.match);
+    else if (ref.type === 'groupRank') {
+      for (const m of allMatches) {
+        if (m.stage === 'group' && m.group === ref.group) out.push(m.id);
+      }
+    }
+  }
+  return out;
+}
+
 /** 依存関係のみを見る。準備できた試合を出現順にコート数ぶんずつ束ねる。 */
 export function dependencyOnly(matches, { courts }) {
   const placed = new Set();
   const remaining = [...matches];
   const slots = [];
 
-  const ready = (m) =>
-    [m.left, m.right].every((r) => r.type === 'team' || placed.has(r.match));
+  const ready = (m) => dependenciesOf(m, matches).every((id) => placed.has(id));
 
   while (remaining.length > 0) {
     const batch = [];
@@ -41,7 +61,7 @@ export function countBackToBack(matches, slots) {
   slots.forEach((batch, i) => batch.forEach((m) => at.set(m.id, i)));
   let tight = 0;
   for (const m of matches) {
-    const deps = [m.left, m.right].filter((r) => r.type !== 'team').map((r) => at.get(r.match));
+    const deps = dependenciesOf(m, matches).map((id) => at.get(id));
     if (deps.length && at.get(m.id) - Math.max(...deps) === 1) tight += 1;
   }
   return tight;
@@ -53,7 +73,7 @@ function greedy(matches, courts, minGap) {
   const remaining = [...matches];
   const slots = [];
   const gapOf = (m, k) => {
-    const deps = [m.left, m.right].filter((r) => r.type !== 'team').map((r) => placed.get(r.match));
+    const deps = dependenciesOf(m, matches).map((id) => placed.get(id));
     if (deps.some((d) => d === undefined)) return -1;
     return deps.length ? k - Math.max(...deps) : Infinity;
   };

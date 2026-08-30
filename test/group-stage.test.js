@@ -76,7 +76,7 @@ test('順位表の数式が組ごとに独立した範囲を見る', () => {
   const t = buildGroupStage({ teams: 8, groups: 2 });
   t.scoring = 'sets-of-3';
   const g = new Grid('試合管理');
-  const blocks = writeStandings(g, t, 20);
+  const blocks = writeStandings(g, t);
   assert.equal(blocks.length, 2);
   const a = groupMatchRows(t, 0);
   const b = groupMatchRows(t, 1);
@@ -92,7 +92,7 @@ test('順位は 勝数 → 直接対決 → セット率 の重みで決まる',
   const t = buildGroupStage({ teams: 8, groups: 2 });
   t.scoring = 'sets-of-3';
   const g = new Grid('試合管理');
-  const blocks = writeStandings(g, t, 20);
+  const blocks = writeStandings(g, t);
   const score = g.cells.get(`${blocks[0].top},6`).value;
   // 勝数の重みが直接対決より3桁大きく、直接対決はセット率より効く
   assert.match(score, /\*1000000\+/, '勝数の重み');
@@ -104,7 +104,7 @@ test('勝敗のみの方式ではセット率を計算しない', () => {
   const t = buildGroupStage({ teams: 8, groups: 2 });
   t.scoring = 'win-loss';
   const g = new Grid('試合管理');
-  const blocks = writeStandings(g, t, 20);
+  const blocks = writeStandings(g, t);
   // 取得・失セットは 0 のまま（比較に効かない）
   assert.equal(g.cells.get(`${blocks[0].top},3`).value, '=0');
   assert.equal(g.cells.get(`${blocks[0].top},4`).value, '=0');
@@ -113,12 +113,45 @@ test('勝敗のみの方式ではセット率を計算しない', () => {
 test('n位のチームを逆引きする数式が出る', () => {
   const t = buildGroupStage({ teams: 8, groups: 2 });
   t.scoring = 'sets-of-3';
-  const g = new Grid('試合管理');
-  const blocks = writeStandings(g, t, 20);
   for (const [group, rank] of [[0, 1], [0, 2], [1, 1], [1, 2]]) {
-    const f = groupRankFormula(blocks, group, rank);
+    const f = groupRankFormula(t, group, rank);
     assert.match(f, /INDEX\('試合管理'!/);
     assert.match(f, new RegExp(`MATCH\\(${rank},`));
     assert.match(f, /^IFERROR\(/, '未確定のときは空にする');
+  }
+});
+
+test('予選がある形式では「1敗で敗退」と書かない', async () => {
+  // 予選は総当たりなので1敗しても続く。決勝Tに入ってから一発勝負になる。
+  const { layoutBracketSheet, eliminationRule } = await import('../core/layout.js');
+  const { buildTournament } = await import('../core/index.js');
+  const t = buildTournament({ format: 'group-stage', teams: 8, courts: 2, scoring: 'sets-of-3' });
+  assert.match(eliminationRule(t), /予選は各チーム3試合／決勝Tは1敗で敗退/);
+  const texts = [...layoutBracketSheet(t).cells.values()].map((c) => String(c.value));
+  assert.ok(!texts.some((x) => /^全\d+試合／1敗で敗退/.test(x)), '予選を無視した説明が残っている');
+});
+
+test('予選の対戦カードをトーナメント表に重複して出さない', async () => {
+  // 対戦カードは進行表が持っている。順位表の下にリストを並べると二重になる。
+  const { layoutBracketSheet } = await import('../core/layout.js');
+  const { buildTournament } = await import('../core/index.js');
+  const t = buildTournament({ format: 'group-stage', teams: 8, courts: 2, scoring: 'sets-of-3' });
+  const heads = [...layoutBracketSheet(t).cells.values()]
+    .filter((c) => c.col === 1 && String(c.value).startsWith('■'))
+    .map((c) => String(c.value));
+  const groupSections = heads.filter((h) => h.includes('予選'));
+  assert.equal(groupSections.length, t.groups.length, `予選の見出しが重複: ${JSON.stringify(heads)}`);
+  for (const h of groupSections) assert.match(h, /決勝トーナメントへ/, '順位表ではなく試合リストが出ている');
+});
+
+test('決勝トーナメントは予選が全部終わってから始まる', async () => {
+  const { buildTournament } = await import('../core/index.js');
+  for (const [teams, groups] of [[8, 2], [12, 3], [16, 4]]) {
+    const t = buildTournament({ format: 'group-stage', teams, groups, courts: 2, scoring: 'sets-of-3' });
+    const at = new Map();
+    t.slots.forEach((s, i) => s.matches.forEach((m) => at.set(m.matchId, i)));
+    const lastGroup = Math.max(...t.matches.filter((m) => m.stage === 'group').map((m) => at.get(m.id)));
+    const firstKo = Math.min(...t.matches.filter((m) => m.stage === 'knockout').map((m) => at.get(m.id)));
+    assert.ok(lastGroup < firstKo, `${teams}人${groups}組: 予選(${lastGroup})より前に決勝T(${firstKo})が始まる`);
   }
 });

@@ -1,5 +1,7 @@
 import { Grid, a1 } from './grid.js';
 import { liveRefFormula, controlCell } from './sheets.js';
+import { standingsLayout } from './standings.js';
+import { TABS } from './sheets.js';
 
 // 実物 8team_volleyball_base.xlsx と同じ列構成
 export const COLUMNS = [
@@ -85,6 +87,9 @@ export function layoutBracketSheet(tournament) {
 
   // ツリーを持つ形式（シングル／ダブルの勝者側）はブラケット図として描く。
   // 完全順位決定はツリーではなく再帰的な二分割なので、終端グループ方式で描く。
+  // 予選がある形式は、順位表を決勝トーナメントの前に出す
+  if (tournament.groups) row = renderGroupStandings(g, tournament, row);
+
   const inBracket = new Set();
   if (tournament.tree) {
     row = renderTree(g, tournament, row, inBracket);
@@ -98,14 +103,17 @@ export function layoutBracketSheet(tournament) {
   }
   // 勝者側と敗者側でラウンド番号が衝突するため、区切りには系統も含める
   const keyOf = (m) => `${m.bracket ?? '-'}/${m.roundNo}/${m.roundName}`;
+  // 予選は順位表で見せるので、対戦カードのリストは出さない。
+  // 対戦カード自体は進行表が持っているので、ここに並べると二重になる。
+  const listed = (m) => !inBracket.has(m.id) && m.stage !== 'group';
   const listKeys = [];
   for (const m of tournament.matches) {
-    if (inBracket.has(m.id)) continue;
+    if (!listed(m)) continue;
     if (!listKeys.includes(keyOf(m))) listKeys.push(keyOf(m));
   }
 
   for (const key of listKeys) {
-    const ms = tournament.matches.filter((m) => !inBracket.has(m.id) && keyOf(m) === key);
+    const ms = tournament.matches.filter((m) => listed(m) && keyOf(m) === key);
     const span = ms.length > 1 ? `（${ms[0].label}〜${ms[ms.length - 1].label}）` : '';
     const note = ms[0].roundNo === 1 && ms[0].bracket !== 'L' && !tournament.tree ? '　※ここだけ抽選で決める' : '';
     g.set(row, 1, `■ ${ms[0].roundName}${span}${note}`, { role: 'section' });
@@ -293,6 +301,11 @@ function drawBranches(g, base, levelSizes, filled) {
 export function eliminationRule(t) {
   if (t.format === 'full-placement') return `各チーム${t.rounds}試合`;
   if (t.format === 'double-elimination') return '2敗で敗退';
+  if (t.format === 'group-stage') {
+    // 予選は総当たりなので1敗しても続く。決勝トーナメントに入ってから一発勝負。
+    const per = t.groups[0].teams.length - 1;
+    return `予選は各チーム${per}試合／決勝Tは1敗で敗退`;
+  }
   return '1敗で敗退';
 }
 
@@ -434,4 +447,47 @@ function renderLoserTree(g, tournament, startRow, inBracket) {
   });
 
   return base + levels[0].refs.length * 2 + 1;
+}
+
+/**
+ * 予選の順位表。集計そのものは試合管理タブの隠しブロックが持っているので、
+ * ここはそれを引いて見せるだけにする。同じ計算を2箇所に置かないため。
+ */
+function renderGroupStandings(g, tournament, startRow) {
+  const blocks = standingsLayout(tournament);
+  const ctrl = (col, row) => `'${TABS.control}'!${col}$${row}`;
+  let row = startRow;
+
+  for (const block of blocks) {
+    const group = tournament.groups[block.group];
+    g.set(row, 1, `■ 予選 ${group.label}（上位${group.advance}チームが決勝トーナメントへ）`, { role: 'section' });
+    g.merge(row, 1, row, 6);
+    row += 1;
+
+    for (const c of [1, 2, 3, 4, 5, 6]) g.set(row, c, '', { role: 'tableHeader' });
+    g.cells.get(`${row},1`).value = '順位';
+    g.cells.get(`${row},2`).value = 'チーム名';
+    g.cells.get(`${row},3`).value = '勝';
+    g.cells.get(`${row},4`).value = '直対';
+    g.cells.get(`${row},5`).value = 'セット';
+    g.merge(row, 5, row, 6);
+    row += 1;
+
+    for (let i = 0; i < block.size; i++) {
+      const r = block.top + i;
+      g.set(row, 1, `=${ctrl('G', r)}`, { role: 'label' });
+      g.set(row, 2, `=${ctrl('A', r)}`, { role: 'slot' });
+      g.set(row, 3, `=${ctrl('B', r)}`, { role: 'body' });
+      g.set(row, 4, `=${ctrl('E', r)}`, { role: 'body' });
+      g.set(row, 5, `=${ctrl('C', r)}&"-"&${ctrl('D', r)}`, { role: 'body' });
+      g.set(row, 6, '', { role: 'body' });
+      g.merge(row, 5, row, 6);
+      row += 1;
+    }
+    row += 1;
+  }
+
+  g.set(row, 1, '※ 順位は 勝数 → 直接対決 → セット率 の順で決めます。3チーム以上が並ぶと直接対決では決まらず、セット率で分かれます。', { role: 'note' });
+  g.merge(row, 1, row, 6);
+  return row + 2;
 }

@@ -438,12 +438,205 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     };
   }
 
+  // core/formats/group-stage.js
+  function separateSameGroup(slots) {
+    const info = (x) => x && x.type === "groupRank" ? x : null;
+    const bad = (a, b) => {
+      const [x, y] = [info(a), info(b)];
+      if (!x || !y) return false;
+      return x.group === y.group || x.rank === 1 && y.rank === 1;
+    };
+    for (let i = 0; i < slots.length; i += 2) {
+      if (!bad(slots[i], slots[i + 1])) continue;
+      let fixed = false;
+      for (let j = 0; j < slots.length && !fixed; j += 2) {
+        if (j === i) continue;
+        for (const k of [0, 1]) {
+          const cand = slots[j + k];
+          const partner = slots[j + (1 - k)];
+          if (!bad(slots[i], cand) && !bad(slots[i + 1], partner)) {
+            slots[j + k] = slots[i + 1];
+            slots[i + 1] = cand;
+            fixed = true;
+            break;
+          }
+        }
+      }
+    }
+    return slots;
+  }
+  var groupLabel = (i) => `${String.fromCharCode(65 + i)}\u7D44`;
+  function splitGroups(teams, groups) {
+    const out = Array.from({ length: groups }, () => []);
+    for (let i = 0; i < teams; i++) {
+      const round = Math.floor(i / groups);
+      const pos = round % 2 === 0 ? i % groups : groups - 1 - i % groups;
+      out[pos].push(i);
+    }
+    return out;
+  }
+  function defaultGroups(teams) {
+    return Math.max(2, Math.round(teams / 4.5));
+  }
+  function buildGroupStage({ teams, groups, advancePerGroup = 2, thirdPlace = true }) {
+    validateTeams(teams);
+    const groupCount = groups != null ? groups : defaultGroups(teams);
+    if (groupCount < 2) throw new Error(`\u7D44\u6570\u306F2\u4EE5\u4E0A\u306B\u3057\u3066\u304F\u3060\u3055\u3044: ${groupCount}`);
+    const members = splitGroups(teams, groupCount);
+    const smallest = Math.min(...members.map((g) => g.length));
+    if (smallest < 3) {
+      throw new Error(
+        `${teams}\u30C1\u30FC\u30E0\u3092${groupCount}\u7D44\u306B\u5206\u3051\u308B\u30681\u7D44${smallest}\u30C1\u30FC\u30E0\u306B\u306A\u308A\u307E\u3059\u3002
+\u7DCF\u5F53\u305F\u308A\u306E\u610F\u5473\u304C\u8584\u3044\u306E\u3067\u3001\u7D44\u6570\u3092\u6E1B\u3089\u3059\u304B\u30C1\u30FC\u30E0\u6570\u3092\u5897\u3084\u3057\u3066\u304F\u3060\u3055\u3044\u3002`
+      );
+    }
+    if (advancePerGroup >= smallest) {
+      throw new Error(
+        `1\u7D44${smallest}\u30C1\u30FC\u30E0\u304B\u3089${advancePerGroup}\u30C1\u30FC\u30E0\u9032\u51FA\u3067\u306F\u3001\u4E88\u9078\u3067\u843D\u3061\u308B\u30C1\u30FC\u30E0\u304C\u307B\u3068\u3093\u3069\u51FA\u307E\u305B\u3093\u3002`
+      );
+    }
+    const raw = [];
+    let seq = 0;
+    members.forEach((team, g) => {
+      for (let i = 0; i < team.length; i++) {
+        for (let j = i + 1; j < team.length; j++) {
+          raw.push({
+            seq: seq++,
+            stage: "group",
+            group: g,
+            roundNo: 1,
+            left: { type: "team", index: team[i], label: teamLabel(team[i]) },
+            right: { type: "team", index: team[j], label: teamLabel(team[j]) }
+          });
+        }
+      }
+    });
+    const qualifiers = [];
+    for (let r = 1; r <= advancePerGroup; r++) {
+      for (let g = 0; g < groupCount; g++) {
+        qualifiers.push({ type: "groupRank", group: g, rank: r, label: `${groupLabel(g)}${r}\u4F4D` });
+      }
+    }
+    const size = 2 ** Math.ceil(Math.log2(qualifiers.length));
+    const BYE3 = { type: "bye" };
+    const slots = seedOrder(size).map((s) => s <= qualifiers.length ? qualifiers[s - 1] : BYE3);
+    separateSameGroup(slots);
+    const play = (left, right, meta) => {
+      if (left.type === "bye" && right.type === "bye") return { win: BYE3, lose: BYE3 };
+      if (left.type === "bye") return { win: right, lose: BYE3 };
+      if (right.type === "bye") return { win: left, lose: BYE3 };
+      const m = { ...meta, seq: seq++, left, right };
+      raw.push(m);
+      return { win: { type: "winner", of: m }, lose: { type: "loser", of: m } };
+    };
+    let cur = slots;
+    let round = 1;
+    const levels = [cur.slice()];
+    while (cur.length > 1) {
+      const next = [];
+      for (let i = 0; i < cur.length; i += 2) {
+        next.push(play(cur[i], cur[i + 1], { stage: "knockout", roundNo: round }).win);
+      }
+      cur = next;
+      levels.push(cur.slice());
+      round += 1;
+    }
+    const koRounds = round - 1;
+    const finalMatch = raw[raw.length - 1];
+    const semis = raw.filter((m) => m.stage === "knockout" && m.roundNo === koRounds - 1);
+    let thirdMatch = null;
+    if (thirdPlace && semis.length === 2) {
+      thirdMatch = {
+        stage: "knockout",
+        roundNo: koRounds,
+        seq: seq++,
+        left: { type: "loser", of: semis[0] },
+        right: { type: "loser", of: semis[1] },
+        isThirdPlace: true
+      };
+      raw.push(thirdMatch);
+    }
+    const stageRank = { group: 0, knockout: 1 };
+    const ordered = [...raw].sort(
+      (a, b) => stageRank[a.stage] - stageRank[b.stage] || (a.stage === "group" ? a.group - b.group : a.roundNo - b.roundNo) || Number(Boolean(b.isThirdPlace)) - Number(Boolean(a.isThirdPlace)) || a.seq - b.seq
+    );
+    ordered.forEach((m, i) => {
+      m.id = `M${i + 1}`;
+      m.no = i + 1;
+      m.label = circled(i + 1);
+      m.roundName = m.stage === "group" ? `\u4E88\u9078 ${groupLabel(m.group)}` : m.isThirdPlace ? "3\u4F4D\u6C7A\u5B9A\u6226" : m === finalMatch ? "\u6C7A\u52DD" : m.roundNo === koRounds - 1 ? "\u6E96\u6C7A\u52DD" : `\u6C7A\u52DDT ${m.roundNo}\u56DE\u6226`;
+    });
+    const resolve = (ref) => ref.type === "team" ? { type: "team", index: ref.index, label: ref.label } : ref.type === "groupRank" ? { type: "groupRank", group: ref.group, rank: ref.rank, label: ref.label } : { type: ref.type, match: ref.of.id, matchLabel: ref.of.label };
+    for (const m of ordered) {
+      m.leftRef = resolve(m.left);
+      m.rightRef = resolve(m.right);
+      m.winnerTo = null;
+      m.loserTo = null;
+    }
+    for (const m of ordered) {
+      for (const ref of [m.left, m.right]) {
+        if (ref.type === "winner") ref.of.winnerTo = m.id;
+        if (ref.type === "loser") ref.of.loserTo = m.id;
+      }
+    }
+    return {
+      format: "group-stage",
+      teams,
+      teamLabels: Array.from({ length: teams }, (_, i) => teamLabel(i)),
+      groups: members.map((team, g) => ({
+        index: g,
+        label: groupLabel(g),
+        teams: team,
+        advance: advancePerGroup
+      })),
+      advancePerGroup,
+      rounds: koRounds,
+      placements: thirdMatch ? 4 : 2,
+      tree: {
+        title: "\u6C7A\u52DD\u30C8\u30FC\u30CA\u30E1\u30F3\u30C8",
+        size,
+        levels: levels.map((lv) => lv.map((r) => r.type === "bye" ? null : resolve(r)))
+      },
+      matches: ordered.map((m) => {
+        var _a;
+        return {
+          id: m.id,
+          no: m.no,
+          label: m.label,
+          stage: m.stage,
+          group: (_a = m.group) != null ? _a : null,
+          roundNo: m.roundNo,
+          roundName: m.roundName,
+          left: m.leftRef,
+          right: m.rightRef,
+          winnerTo: m.winnerTo,
+          loserTo: m.loserTo,
+          decides: m === finalMatch ? { winner: 1, loser: 2 } : m === thirdMatch ? { winner: 3, loser: 4 } : null,
+          rankStart: 1,
+          rankSpan: teams
+        };
+      })
+    };
+  }
+
   // core/schedule.js
+  function dependenciesOf(match, allMatches) {
+    const out = [];
+    for (const ref of [match.left, match.right]) {
+      if (ref.type === "winner" || ref.type === "loser") out.push(ref.match);
+      else if (ref.type === "groupRank") {
+        for (const m of allMatches) {
+          if (m.stage === "group" && m.group === ref.group) out.push(m.id);
+        }
+      }
+    }
+    return out;
+  }
   function dependencyOnly(matches, { courts }) {
     const placed = /* @__PURE__ */ new Set();
     const remaining = [...matches];
     const slots = [];
-    const ready = (m) => [m.left, m.right].every((r) => r.type === "team" || placed.has(r.match));
+    const ready = (m) => dependenciesOf(m, matches).every((id) => placed.has(id));
     while (remaining.length > 0) {
       const batch = [];
       for (let i = 0; i < remaining.length && batch.length < courts; i++) {
@@ -465,7 +658,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     slots.forEach((batch, i) => batch.forEach((m) => at.set(m.id, i)));
     let tight = 0;
     for (const m of matches) {
-      const deps = [m.left, m.right].filter((r) => r.type !== "team").map((r) => at.get(r.match));
+      const deps = dependenciesOf(m, matches).map((id) => at.get(id));
       if (deps.length && at.get(m.id) - Math.max(...deps) === 1) tight += 1;
     }
     return tight;
@@ -475,7 +668,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     const remaining = [...matches];
     const slots = [];
     const gapOf = (m, k) => {
-      const deps = [m.left, m.right].filter((r) => r.type !== "team").map((r) => placed.get(r.match));
+      const deps = dependenciesOf(m, matches).map((id) => placed.get(id));
       if (deps.some((d) => d === void 0)) return -1;
       return deps.length ? k - Math.max(...deps) : Infinity;
     };
@@ -548,7 +741,8 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
   var BUILDERS = {
     "full-placement": buildFullPlacement,
     "double-elimination": buildDoubleElimination,
-    "single-elimination": buildSingleElimination
+    "single-elimination": buildSingleElimination,
+    "group-stage": buildGroupStage
   };
   function buildTournament(config) {
     var _a, _b, _c, _d;
@@ -588,20 +782,20 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       this.paths = [];
       this.columns = /* @__PURE__ */ new Map();
     }
-    key(row, col) {
-      return `${row},${col}`;
+    key(row, col2) {
+      return `${row},${col2}`;
     }
-    set(row, col, value2, style = {}) {
-      if (!Number.isInteger(row) || row < 1 || !Number.isInteger(col) || col < 1) {
-        throw new Error(`${this.name}: \u4E0D\u6B63\u306A\u30BB\u30EB\u4F4D\u7F6E (${row}, ${col})`);
+    set(row, col2, value2, style = {}) {
+      if (!Number.isInteger(row) || row < 1 || !Number.isInteger(col2) || col2 < 1) {
+        throw new Error(`${this.name}: \u4E0D\u6B63\u306A\u30BB\u30EB\u4F4D\u7F6E (${row}, ${col2})`);
       }
-      const k = this.key(row, col);
+      const k = this.key(row, col2);
       if (this.cells.has(k)) {
         throw new Error(
-          `${this.name}: \u30BB\u30EB ${a1(row, col)} \u3078\u306E\u4E8C\u91CD\u66F8\u304D\u8FBC\u307F\u3002\u65E2\u5B58="${this.cells.get(k).value}" \u65B0\u898F="${value2}"`
+          `${this.name}: \u30BB\u30EB ${a1(row, col2)} \u3078\u306E\u4E8C\u91CD\u66F8\u304D\u8FBC\u307F\u3002\u65E2\u5B58="${this.cells.get(k).value}" \u65B0\u898F="${value2}"`
         );
       }
-      this.cells.set(k, { row, col, value: value2, style });
+      this.cells.set(k, { row, col: col2, value: value2, style });
       return this;
     }
     merge(r1, c1, r2, c2) {
@@ -634,12 +828,12 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
      * 勝ち上がり経路。連結列のセルを勝者の色で塗ってマーカー線に見せる。
      * 条件付き書式は罫線に触れないので、枝線そのものは動かせない。
      */
-    path(r1, r2, col, cellRef, winnerOf) {
-      this.paths.push({ r1: Math.min(r1, r2), r2: Math.max(r1, r2), col, cellRef, winnerOf });
+    path(r1, r2, col2, cellRef, winnerOf) {
+      this.paths.push({ r1: Math.min(r1, r2), r2: Math.max(r1, r2), col: col2, cellRef, winnerOf });
       return this;
     }
-    setColumnWidth(col, width) {
-      this.columns.set(col, width);
+    setColumnWidth(col2, width) {
+      this.columns.set(col2, width);
       return this;
     }
     get maxRow() {
@@ -655,15 +849,111 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       return m;
     }
   };
-  function a1(row, col) {
+  function a1(row, col2) {
     let s = "";
-    let n = col;
+    let n = col2;
     while (n > 0) {
       const r = (n - 1) % 26;
       s = String.fromCharCode(65 + r) + s;
       n = Math.floor((n - 1) / 26);
     }
     return s + row;
+  }
+
+  // core/standings.js
+  var W_WEIGHT = 1e6;
+  var H2H_WEIGHT = 1e3;
+  var GAP = 2;
+  var COLS = { team: 1, wins: 2, got: 3, lost: 4, h2h: 5, score: 6, rank: 7, beat: 9 };
+  function standingsLayout(tournament) {
+    let row = cellRefs.controlRow(tournament.matches.length) + GAP;
+    return tournament.groups.map((group) => {
+      const block = { group: group.index, label: group.label, head: row, top: row + 1, size: group.teams.length, cols: COLS };
+      row = block.top + block.size + GAP;
+      return block;
+    });
+  }
+  function groupMatchRows(tournament, groupIndex) {
+    const idx = tournament.matches.map((m, i) => ({ m, i })).filter(({ m }) => m.stage === "group" && m.group === groupIndex).map(({ i }) => cellRefs.controlRow(i));
+    return { first: Math.min(...idx), last: Math.max(...idx) };
+  }
+  function writeStandings(g, tournament) {
+    const sc = getScoring(tournament.scoring);
+    const hasSets = sc.options.some((o) => /^\d+-\d+$/.test(o));
+    const blocks = standingsLayout(tournament);
+    for (const block of blocks) {
+      const group = tournament.groups[block.group];
+      const { first, last } = groupMatchRows(tournament, group.index);
+      const n = block.size;
+      const { head, top, cols } = block;
+      g.set(head, cols.team, `${group.label} \u9806\u4F4D\u8868`, { helper: true });
+      group.teams.forEach((teamIndex, i) => {
+        const r = top + i;
+        const me = `$A$${r}`;
+        const name = cellRefs.teamName(teamIndex);
+        g.set(r, cols.team, `=${name}`, { helper: true });
+        g.set(r, cols.wins, `=COUNTIF($E$${first}:$E$${last},${col(cols.team)}${r})`, { helper: true });
+        if (hasSets) {
+          g.set(
+            r,
+            cols.got,
+            `=SUMPRODUCT(($B$${first}:$B$${last}=${col(cols.team)}${r})*IFERROR(VALUE(LEFT($D$${first}:$D$${last},1)),0))+SUMPRODUCT(($C$${first}:$C$${last}=${col(cols.team)}${r})*IFERROR(VALUE(RIGHT($D$${first}:$D$${last},1)),0))`,
+            { helper: true }
+          );
+          g.set(
+            r,
+            cols.lost,
+            `=SUMPRODUCT(($B$${first}:$B$${last}=${col(cols.team)}${r})*IFERROR(VALUE(RIGHT($D$${first}:$D$${last},1)),0))+SUMPRODUCT(($C$${first}:$C$${last}=${col(cols.team)}${r})*IFERROR(VALUE(LEFT($D$${first}:$D$${last},1)),0))`,
+            { helper: true }
+          );
+        } else {
+          g.set(r, cols.got, "=0", { helper: true });
+          g.set(r, cols.lost, "=0", { helper: true });
+        }
+        for (let j = 0; j < n; j++) {
+          const opp = `${col(cols.team)}${top + j}`;
+          g.set(
+            r,
+            cols.beat + j,
+            i === j ? "=0" : `=SUMPRODUCT(($E$${first}:$E$${last}=${col(cols.team)}${r})*(($B$${first}:$B$${last}=${opp})+($C$${first}:$C$${last}=${opp})))`,
+            { helper: true }
+          );
+        }
+        const beatRange = `${col(cols.beat)}${r}:${col(cols.beat + n - 1)}${r}`;
+        const winsRange = `${col(cols.wins)}$${top}:${col(cols.wins)}$${top + n - 1}`;
+        g.set(
+          r,
+          cols.h2h,
+          `=SUMPRODUCT(${beatRange},TRANSPOSE(N(${winsRange}=${col(cols.wins)}${r})))`,
+          { helper: true }
+        );
+        const ratio = `IFERROR(${col(cols.got)}${r}/MAX(${col(cols.lost)}${r},1),0)`;
+        g.set(
+          r,
+          cols.score,
+          `=${col(cols.wins)}${r}*${W_WEIGHT}+${col(cols.h2h)}${r}*${H2H_WEIGHT}+${ratio}-${i}*0.0001`,
+          { helper: true }
+        );
+        const scoreRange = `${col(cols.score)}$${top}:${col(cols.score)}$${top + n - 1}`;
+        g.set(r, cols.rank, `=RANK(${col(cols.score)}${r},${scoreRange})`, { helper: true });
+      });
+    }
+    return blocks;
+  }
+  function groupRankFormula(tournament, groupIndex, rank) {
+    const b = standingsLayout(tournament).find((x) => x.group === groupIndex);
+    const teams = `'${TABS.control}'!${col(b.cols.team)}$${b.top}:${col(b.cols.team)}$${b.top + b.size - 1}`;
+    const ranks = `'${TABS.control}'!${col(b.cols.rank)}$${b.top}:${col(b.cols.rank)}$${b.top + b.size - 1}`;
+    return `IFERROR(INDEX(${teams},MATCH(${rank},${ranks},0)),"")`;
+  }
+  function col(n) {
+    let s = "";
+    while (n > 0) {
+      const r = (n - 1) % 26;
+      s = String.fromCharCode(65 + r) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
   }
 
   // core/sheets.js
@@ -683,13 +973,17 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
   };
   var matchIndex = (t, id) => t.matches.findIndex((m) => m.id === id);
   function controlCell(tournament, matchId, kind) {
-    const col = kind === "winner" ? "E" : "F";
-    return `'${TABS.control}'!$${col}$${cellRefs.controlRow(matchIndex(tournament, matchId))}`;
+    const col2 = kind === "winner" ? "E" : "F";
+    return `'${TABS.control}'!$${col2}$${cellRefs.controlRow(matchIndex(tournament, matchId))}`;
   }
   function liveRefFormula(tournament, ref) {
     if (ref.type === "team") {
       const c = cellRefs.teamName(ref.index);
       return `=IF(${c}="","\uFF08${ref.label}\u30C1\u30FC\u30E0\uFF09",${c})`;
+    }
+    if (ref.type === "groupRank") {
+      const f = groupRankFormula(tournament, ref.group, ref.rank);
+      return `=IF(${f}="","${ref.label}",${f})`;
     }
     const cell = controlCell(tournament, ref.match, ref.type);
     const placeholder = `${ref.matchLabel}\u306E${ref.type === "winner" ? "\u52DD\u8005" : "\u6557\u8005"}`;
@@ -703,13 +997,10 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     tournament.matches.forEach((m, i) => {
       const r = cellRefs.controlRow(i);
       const side = (ref) => {
-        if (ref.type === "team") {
-          const c = cellRefs.teamName(ref.index);
-          return `=IF(${c}="","\uFF08${ref.label}\u30C1\u30FC\u30E0\uFF09",${c})`;
-        }
+        if (ref.type === "team" || ref.type === "groupRank") return liveRefFormula(tournament, ref);
         const src = cellRefs.controlRow(matchIndex(tournament, ref.match));
-        const col = ref.type === "winner" ? "E" : "F";
-        return `=IF($${col}$${src}="","",$${col}$${src})`;
+        const col2 = ref.type === "winner" ? "E" : "F";
+        return `=IF($${col2}$${src}="","",$${col2}$${src})`;
       };
       const won = sc.leftWins(`$D${r}`);
       g.set(r, 1, m.label);
@@ -728,6 +1019,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       g.set(r, 6, `=IF($D${r}="","",IF(${won},$C${r},$B${r}))`);
       g.set(r, 7, `=IF($D${r}="","\u672A\u5165\u529B","\u78BA\u5B9A")`);
     });
+    if (tournament.groups) writeStandings(g, tournament);
     return g;
   }
   function layoutMobileSheet(tournament) {
@@ -818,12 +1110,12 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
   }
   function helperCell(tournament, matchId, kind) {
     const i = tournament.matches.findIndex((m) => m.id === matchId);
-    const col = helperCols(tournament)[kind];
-    return `$${a1(1, col).replace(/\d+$/, "")}$${helperRow(i)}`;
+    const col2 = helperCols(tournament)[kind];
+    return `$${a1(1, col2).replace(/\d+$/, "")}$${helperRow(i)}`;
   }
   function layoutBracketSheet(tournament) {
     const g = new Grid("\u30C8\u30FC\u30CA\u30E1\u30F3\u30C8\u8868");
-    for (const { col, width } of COLUMNS) g.setColumnWidth(col, width);
+    for (const { col: col2, width } of COLUMNS) g.setColumnWidth(col2, width);
     const hc = helperCols(tournament);
     g.set(1, hc.winner, "\uFF08\u5185\u90E8\uFF09\u52DD\u8005", { helper: true });
     g.set(1, hc.loser, "\uFF08\u5185\u90E8\uFF09\u6557\u8005", { helper: true });
@@ -839,6 +1131,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     row += 1;
     g.set(row, 1, subtitle(tournament), { role: "note" });
     row += 2;
+    if (tournament.groups) row = renderGroupStandings(g, tournament, row);
     const inBracket = /* @__PURE__ */ new Set();
     if (tournament.tree) {
       row = renderTree(g, tournament, row, inBracket);
@@ -854,13 +1147,14 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       var _a;
       return `${(_a = m.bracket) != null ? _a : "-"}/${m.roundNo}/${m.roundName}`;
     };
+    const listed = (m) => !inBracket.has(m.id) && m.stage !== "group";
     const listKeys = [];
     for (const m of tournament.matches) {
-      if (inBracket.has(m.id)) continue;
+      if (!listed(m)) continue;
       if (!listKeys.includes(keyOf(m))) listKeys.push(keyOf(m));
     }
     for (const key of listKeys) {
-      const ms = tournament.matches.filter((m) => !inBracket.has(m.id) && keyOf(m) === key);
+      const ms = tournament.matches.filter((m) => listed(m) && keyOf(m) === key);
       const span = ms.length > 1 ? `\uFF08${ms[0].label}\u301C${ms[ms.length - 1].label}\uFF09` : "";
       const note = ms[0].roundNo === 1 && ms[0].bracket !== "L" && !tournament.tree ? "\u3000\u203B\u3053\u3053\u3060\u3051\u62BD\u9078\u3067\u6C7A\u3081\u308B" : "";
       g.set(row, 1, `\u25A0 ${ms[0].roundName}${span}${note}`, { role: "section" });
@@ -1013,6 +1307,10 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
   function eliminationRule(t) {
     if (t.format === "full-placement") return `\u5404\u30C1\u30FC\u30E0${t.rounds}\u8A66\u5408`;
     if (t.format === "double-elimination") return "2\u6557\u3067\u6557\u9000";
+    if (t.format === "group-stage") {
+      const per = t.groups[0].teams.length - 1;
+      return `\u4E88\u9078\u306F\u5404\u30C1\u30FC\u30E0${per}\u8A66\u5408\uFF0F\u6C7A\u52DDT\u306F1\u6557\u3067\u6557\u9000`;
+    }
     return "1\u6557\u3067\u6557\u9000";
   }
   function nextMatchOf(tournament, ref, parentRef) {
@@ -1115,6 +1413,40 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     });
     return base + levels[0].refs.length * 2 + 1;
   }
+  function renderGroupStandings(g, tournament, startRow) {
+    const blocks = standingsLayout(tournament);
+    const ctrl = (col2, row2) => `'${TABS.control}'!${col2}$${row2}`;
+    let row = startRow;
+    for (const block of blocks) {
+      const group = tournament.groups[block.group];
+      g.set(row, 1, `\u25A0 \u4E88\u9078 ${group.label}\uFF08\u4E0A\u4F4D${group.advance}\u30C1\u30FC\u30E0\u304C\u6C7A\u52DD\u30C8\u30FC\u30CA\u30E1\u30F3\u30C8\u3078\uFF09`, { role: "section" });
+      g.merge(row, 1, row, 6);
+      row += 1;
+      for (const c of [1, 2, 3, 4, 5, 6]) g.set(row, c, "", { role: "tableHeader" });
+      g.cells.get(`${row},1`).value = "\u9806\u4F4D";
+      g.cells.get(`${row},2`).value = "\u30C1\u30FC\u30E0\u540D";
+      g.cells.get(`${row},3`).value = "\u52DD";
+      g.cells.get(`${row},4`).value = "\u76F4\u5BFE";
+      g.cells.get(`${row},5`).value = "\u30BB\u30C3\u30C8";
+      g.merge(row, 5, row, 6);
+      row += 1;
+      for (let i = 0; i < block.size; i++) {
+        const r = block.top + i;
+        g.set(row, 1, `=${ctrl("G", r)}`, { role: "label" });
+        g.set(row, 2, `=${ctrl("A", r)}`, { role: "slot" });
+        g.set(row, 3, `=${ctrl("B", r)}`, { role: "body" });
+        g.set(row, 4, `=${ctrl("E", r)}`, { role: "body" });
+        g.set(row, 5, `=${ctrl("C", r)}&"-"&${ctrl("D", r)}`, { role: "body" });
+        g.set(row, 6, "", { role: "body" });
+        g.merge(row, 5, row, 6);
+        row += 1;
+      }
+      row += 1;
+    }
+    g.set(row, 1, "\u203B \u9806\u4F4D\u306F \u52DD\u6570 \u2192 \u76F4\u63A5\u5BFE\u6C7A \u2192 \u30BB\u30C3\u30C8\u7387 \u306E\u9806\u3067\u6C7A\u3081\u307E\u3059\u30023\u30C1\u30FC\u30E0\u4EE5\u4E0A\u304C\u4E26\u3076\u3068\u76F4\u63A5\u5BFE\u6C7A\u3067\u306F\u6C7A\u307E\u3089\u305A\u3001\u30BB\u30C3\u30C8\u7387\u3067\u5206\u304B\u308C\u307E\u3059\u3002", { role: "note" });
+    g.merge(row, 1, row, 6);
+    return row + 2;
+  }
 
   // core/theme.js
   var THEME = {
@@ -1182,12 +1514,12 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }
   };
   var DONE_FORMAT = { backgroundColor: toRgb(COLORS.resultDone) };
-  var oneCell = (sheetId, row, col) => ({
+  var oneCell = (sheetId, row, col2) => ({
     sheetId,
     startRowIndex: row - 1,
     endRowIndex: row,
-    startColumnIndex: col - 1,
-    endColumnIndex: col
+    startColumnIndex: col2 - 1,
+    endColumnIndex: col2
   });
   var rule = (ranges, condition, format) => ({
     addConditionalFormatRule: { rule: { ranges, booleanRule: { condition, format } }, index: 0 }
@@ -1285,10 +1617,10 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       requests.push(commonFormatRequest(sheetId, grid));
       requests.push(...roleFormatRequests(sheetId, grid));
       requests.push(...boxBorderRequests(sheetId, grid));
-      for (const [col, width] of grid.columns) {
+      for (const [col2, width] of grid.columns) {
         requests.push({
           updateDimensionProperties: {
-            range: { sheetId, dimension: "COLUMNS", startIndex: col - 1, endIndex: col },
+            range: { sheetId, dimension: "COLUMNS", startIndex: col2 - 1, endIndex: col2 },
             properties: { pixelSize: Math.round(width * 7.5) },
             fields: "pixelSize"
           }
@@ -1327,10 +1659,10 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       requests.push(...validationRequests(sheetId, grid));
     }
     const hc = helperCols(tournament);
-    for (const col of [hc.winner, hc.loser]) {
+    for (const col2 of [hc.winner, hc.loser]) {
       requests.push({
         updateDimensionProperties: {
-          range: { sheetId: 0, dimension: "COLUMNS", startIndex: col - 1, endIndex: col },
+          range: { sheetId: 0, dimension: "COLUMNS", startIndex: col2 - 1, endIndex: col2 },
           properties: { hiddenByUser: true },
           fields: "hiddenByUser"
         }

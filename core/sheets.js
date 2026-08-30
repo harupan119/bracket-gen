@@ -1,6 +1,7 @@
 import { Grid } from './grid.js';
 import { getScoring } from './scoring.js';
 import { eliminationRule } from './layout.js';
+import { writeStandings, groupRankFormula } from './standings.js';
 
 export const TABS = {
   bracket: 'トーナメント表',
@@ -39,6 +40,11 @@ export function liveRefFormula(tournament, ref) {
     const c = cellRefs.teamName(ref.index);
     return `=IF(${c}="","（${ref.label}チーム）",${c})`;
   }
+  if (ref.type === 'groupRank') {
+    // 予選が終わるまで誰か分からない。順位表から引き、未確定なら組と順位を目印に出す。
+    const f = groupRankFormula(tournament, ref.group, ref.rank);
+    return `=IF(${f}="","${ref.label}",${f})`;
+  }
   const cell = controlCell(tournament, ref.match, ref.type);
   const placeholder = `${ref.matchLabel}の${ref.type === 'winner' ? '勝者' : '敗者'}`;
   return `=IF(${cell}="","${placeholder}",${cell})`;
@@ -55,10 +61,7 @@ export function layoutControlSheet(tournament) {
   tournament.matches.forEach((m, i) => {
     const r = cellRefs.controlRow(i);
     const side = (ref) => {
-      if (ref.type === 'team') {
-        const c = cellRefs.teamName(ref.index);
-        return `=IF(${c}="","（${ref.label}チーム）",${c})`;
-      }
+      if (ref.type === 'team' || ref.type === 'groupRank') return liveRefFormula(tournament, ref);
       const src = cellRefs.controlRow(matchIndex(tournament, ref.match));
       const col = ref.type === 'winner' ? 'E' : 'F';
       return `=IF($${col}$${src}="","",$${col}$${src})`;
@@ -83,6 +86,8 @@ export function layoutControlSheet(tournament) {
     g.set(r, 6, `=IF($D${r}="","",IF(${won},$C${r},$B${r}))`);
     g.set(r, 7, `=IF($D${r}="","未入力","確定")`);
   });
+  // 予選がある形式は、順位表も同じ非表示タブに置く
+  if (tournament.groups) writeStandings(g, tournament);
   return g;
 }
 

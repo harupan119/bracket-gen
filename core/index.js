@@ -1,6 +1,7 @@
 import { buildFullPlacement } from './formats/full-placement.js';
 import { buildDoubleElimination } from './formats/double-elimination.js';
 import { buildSingleElimination } from './formats/single-elimination.js';
+import { buildGroupStage } from './formats/group-stage.js';
 import { scheduleMatches, dependencyOnly, avoidBackToBack } from './schedule.js';
 import { warningsFor } from './validate.js';
 import { getScoring } from './scoring.js';
@@ -9,6 +10,7 @@ const BUILDERS = {
   'full-placement': buildFullPlacement,
   'double-elimination': buildDoubleElimination,
   'single-elimination': buildSingleElimination,
+  'group-stage': buildGroupStage,
 };
 
 export function buildTournament(config) {
@@ -40,6 +42,6 @@ export function buildTournament(config) {
 }
 
 export {
-  buildFullPlacement, buildDoubleElimination, buildSingleElimination,
+  buildFullPlacement, buildDoubleElimination, buildSingleElimination, buildGroupStage,
   scheduleMatches, dependencyOnly, avoidBackToBack,
 };

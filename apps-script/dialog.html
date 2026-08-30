@@ -23,6 +23,7 @@
         <option value="single-elimination">シングルエリミネーション</option>
         <option value="double-elimination">ダブルエリミネーション</option>
         <option value="full-placement">完全順位決定トーナメント</option>
+        <option value="group-stage">予選リーグ → 決勝トーナメント</option>
       </select>
       <div class="hint" id="formatHint"></div>
     </label>
@@ -82,6 +83,8 @@
           hint.textContent =
             'この形式は ' + OPTS.fullPlacementSizes.join(' / ') +
             ' チームのみ。全員が同じ試合数を戦い、全順位が決まります。';
+        } else if (f === 'group-stage') {
+          hint.textContent = '組ごとの総当たりのあと、各組上位2チームで決勝トーナメント。全員が複数試合できます。';
         } else if (f === 'double-elimination') {
           hint.textContent = '2敗で敗退。1〜3位が決まります。';
         } else {
