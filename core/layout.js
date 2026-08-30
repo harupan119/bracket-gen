@@ -1,6 +1,6 @@
 import { Grid, a1 } from './grid.js';
 import { liveRefFormula, controlCell } from './sheets.js';
-import { standingsLayout } from './standings.js';
+import { standingsLayout, jankenRow, STANDINGS_DISPLAY_START } from './standings.js';
 import { TABS } from './sheets.js';
 
 // 実物 8team_volleyball_base.xlsx と同じ列構成
@@ -470,24 +470,31 @@ function renderGroupStandings(g, tournament, startRow) {
     g.cells.get(`${row},3`).value = '勝';
     g.cells.get(`${row},4`).value = '直対';
     g.cells.get(`${row},5`).value = 'セット';
-    g.merge(row, 5, row, 6);
+    g.cells.get(`${row},6`).value = 'じゃんけん';
     row += 1;
 
     for (let i = 0; i < block.size; i++) {
       const r = block.top + i;
-      g.set(row, 1, `=${ctrl('G', r)}`, { role: 'label' });
+      // 入力欄の位置は試合管理側からも参照するので、行がずれると別のセルを指す
+      const expected = jankenRow(tournament, block.group, i);
+      if (row !== expected) {
+        throw new Error(`じゃんけん入力欄の行がずれています: 表示=${row} 参照=${expected}`);
+      }
+      g.set(row, 1, `=${ctrl('J', r)}`, { role: 'label' });
       g.set(row, 2, `=${ctrl('A', r)}`, { role: 'slot' });
       g.set(row, 3, `=${ctrl('B', r)}`, { role: 'body' });
       g.set(row, 4, `=${ctrl('E', r)}`, { role: 'body' });
       g.set(row, 5, `=${ctrl('C', r)}&"-"&${ctrl('D', r)}`, { role: 'body' });
-      g.set(row, 6, '', { role: 'body' });
-      g.merge(row, 5, row, 6);
+      // 規定で決まらないときだけ使う入力欄。常に置いておき、必要なときに色で知らせる。
+      g.set(row, 6, '', { role: 'optional', jankenOf: ctrl('H', r) });
+      // 条件付き書式は他シートを見られないので、「要じゃんけん」の印を隣の隠し列へ写す
+      g.set(row, 7, `=${ctrl('H', r)}`, { helper: true });
       row += 1;
     }
     row += 1;
   }
 
-  g.set(row, 1, '※ 順位は 勝数 → 直接対決 → セット率 の順で決めます。3チーム以上が並ぶと直接対決では決まらず、セット率で分かれます。', { role: 'note' });
+  g.set(row, 1, '※ 順位は 勝数 → 直接対決 → セット率 の順で決めます。すべて並んだ組は「じゃんけん」欄が黄色くなるので、代表者のじゃんけんで決めた順位（1が勝ち）を入れてください。', { role: 'note' });
   g.merge(row, 1, row, 6);
   return row + 2;
 }

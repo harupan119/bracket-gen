@@ -155,3 +155,75 @@ test('決勝トーナメントは予選が全部終わってから始まる', as
     assert.ok(lastGroup < firstKo, `${teams}人${groups}組: 予選(${lastGroup})より前に決勝T(${firstKo})が始まる`);
   }
 });
+
+test('規定で決まらないときのためのじゃんけん欄が全チームぶん出る', async () => {
+  const { layoutBracketSheet } = await import('../core/layout.js');
+  const { buildTournament } = await import('../core/index.js');
+  for (const [teams, groups] of [[8, 2], [12, 3], [16, 4], [20, 5]]) {
+    const t = buildTournament({ format: 'group-stage', teams, groups, courts: 2, scoring: 'sets-of-3' });
+    const g = layoutBracketSheet(t);
+    const inputs = [...g.cells.values()].filter((c) => c.style.jankenOf);
+    assert.equal(inputs.length, teams, `${teams}人${groups}組`);
+    // 平常時は白。同着のときだけ条件付き書式で黄色くする。
+    // 常時黄色だと「入力必須」に見え、規定で決まる組でも埋めたくなってしまう。
+    for (const c of inputs) {
+      assert.equal(c.style.role, 'optional', '常時入力欄の扱いになっている');
+      assert.ok(!c.style.input, '静的な入力色が付いている');
+    }
+  }
+});
+
+test('じゃんけん欄の位置が表示側と参照側で一致する', async () => {
+  // ここがずれると、試合管理が別のセルを読んで順位が変わってしまう。
+  const { layoutBracketSheet } = await import('../core/layout.js');
+  const { buildTournament } = await import('../core/index.js');
+  const { jankenRow } = await import('../core/standings.js');
+  for (const [teams, groups] of [[8, 2], [12, 3], [20, 5]]) {
+    const t = buildTournament({ format: 'group-stage', teams, groups, courts: 2, scoring: 'sets-of-3' });
+    // レイアウト側に不一致を検出する番人が入っているので、例外なく組めれば一致している
+    assert.doesNotThrow(() => layoutBracketSheet(t), `${teams}人${groups}組`);
+    const g = layoutBracketSheet(t);
+    const rows = [...g.cells.values()].filter((c) => c.style.jankenOf).map((c) => c.row).sort((a, b) => a - b);
+    const expected = [];
+    for (const group of t.groups) {
+      for (let i = 0; i < group.teams.length; i++) expected.push(jankenRow(t, group.index, i));
+    }
+    assert.deepEqual(rows, expected.sort((a, b) => a - b));
+  }
+});
+
+test('同着のときだけじゃんけん欄が色づく', async () => {
+  const { buildTournament } = await import('../core/index.js');
+  const { buildSpreadsheetPayload } = await import('../core/payload.js');
+  const t = buildTournament({ format: 'group-stage', teams: 8, courts: 2, scoring: 'sets-of-3' });
+  const rules = buildSpreadsheetPayload(t).requests
+    .filter((r) => r.addConditionalFormatRule)
+    .map((r) => r.addConditionalFormatRule.rule)
+    .filter((r) => {
+      const f = r.booleanRule.format;
+      return f.backgroundColor?.red > 0.95 && f.backgroundColor?.blue < 0.9 && !f.textFormat?.foregroundColor;
+    });
+  assert.equal(rules.length, t.teams, 'じゃんけん欄のルール数がチーム数と合わない');
+  for (const r of rules) {
+    const f = r.booleanRule.condition.values[0].userEnteredValue;
+    // 隣の隠し列（要じゃんけんの印）を見る。条件付き書式は他シートを見られない。
+    assert.doesNotMatch(f, /!/, `他シート参照が混ざっている: ${f}`);
+    assert.match(f, /^=\$[A-Z]+\$\d+<>""$/, f);
+  }
+});
+
+test('じゃんけんの入力が順位に効く', async () => {
+  const { buildTournament } = await import('../core/index.js');
+  const { Grid } = await import('../core/grid.js');
+  const { writeStandings, standingsLayout } = await import('../core/standings.js');
+  const t = buildTournament({ format: 'group-stage', teams: 8, courts: 2, scoring: 'sets-of-3' });
+  const g = new Grid('試合管理');
+  writeStandings(g, t);
+  const b = standingsLayout(t)[0];
+  const score = g.cells.get(`${b.top},${b.cols.score}`).value;
+  // 規定分（base）に、じゃんけんの分を足して順位を出す
+  assert.match(score, /^=F\d+\+IF\(G\d+="",0,\(5-G\d+\)\*0\.01\)/, score);
+  const tie = g.cells.get(`${b.top},${b.cols.tie}`).value;
+  assert.match(tie, /要じゃんけん/, '同着の検出が無い');
+  assert.match(tie, /COUNTIF/, '同じ規定点のチーム数を数えていない');
+});

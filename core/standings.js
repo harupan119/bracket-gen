@@ -19,7 +19,9 @@ const W_WEIGHT = 1e6;
 const H2H_WEIGHT = 1e3;
 
 const GAP = 2;
-const COLS = { team: 1, wins: 2, got: 3, lost: 4, h2h: 5, score: 6, rank: 7, beat: 9 };
+// base は「3段の判定だけで出した点」。同着の検出に使う。
+// janken は運営がトーナメント表側で入れる、じゃんけんの順位（1が勝ち）。
+const COLS = { team: 1, wins: 2, got: 3, lost: 4, h2h: 5, base: 6, janken: 7, tie: 8, score: 9, rank: 10, beat: 12 };
 
 /**
  * 順位表の配置を、グリッドを作らずに算出する。
@@ -103,11 +105,24 @@ export function writeStandings(g, tournament) {
         `=SUMPRODUCT(${beatRange},TRANSPOSE(N(${winsRange}=${col(cols.wins)}${r})))`,
         { helper: true });
 
-      // 3段を1つの数値へ畳む。末尾の微小項は完全同着を記号順で分けるため。
+      // 3段を1つの数値へ畳む。ここまでが「規定で決まる分」。
       const ratio = `IFERROR(${col(cols.got)}${r}/MAX(${col(cols.lost)}${r},1),0)`;
-      g.set(r, cols.score,
-        `=${col(cols.wins)}${r}*${W_WEIGHT}+${col(cols.h2h)}${r}*${H2H_WEIGHT}+${ratio}-${i}*0.0001`,
+      g.set(r, cols.base,
+        `=${col(cols.wins)}${r}*${W_WEIGHT}+${col(cols.h2h)}${r}*${H2H_WEIGHT}+${ratio}*10`,
         { helper: true });
+
+      // 3段すべてで並んだら規定では決まらない。運営がじゃんけんで決める。
+      const baseRange = `${col(cols.base)}$${top}:${col(cols.base)}$${top + n - 1}`;
+      g.set(r, cols.tie,
+        `=IF(COUNTIF(${baseRange},${col(cols.base)}${r})>1,"要じゃんけん","")`,
+        { helper: true });
+
+      // じゃんけんの結果はトーナメント表の入力欄から引く（運営が見て入れる場所）
+      g.set(r, cols.janken, `=IFERROR(${jankenInput(tournament, block.group, i)},"")`, { helper: true });
+
+      // 入力があればそれで分ける。無ければ記号順で仮に分ける（順位が空になるのを避けるため）。
+      const jk = `IF(${col(cols.janken)}${r}="",0,(${n + 1}-${col(cols.janken)}${r})*0.01)`;
+      g.set(r, cols.score, `=${col(cols.base)}${r}+${jk}-${i}*0.0001`, { helper: true });
 
       const scoreRange = `${col(cols.score)}$${top}:${col(cols.score)}$${top + n - 1}`;
       g.set(r, cols.rank, `=RANK(${col(cols.score)}${r},${scoreRange})`, { helper: true });
@@ -124,6 +139,33 @@ export function groupRankFormula(tournament, groupIndex, rank) {
   const ranks = `'${TABS.control}'!${col(b.cols.rank)}$${b.top}:${col(b.cols.rank)}$${b.top + b.size - 1}`;
   return `IFERROR(INDEX(${teams},MATCH(${rank},${ranks},0)),"")`;
 }
+
+/** じゃんけん入力欄の位置。トーナメント表の予選順位表に置く。 */
+export function jankenInput(tournament, groupIndex, memberIndex) {
+  const row = jankenRow(tournament, groupIndex, memberIndex);
+  return `'${TABS.bracket}'!$F$${row}`;
+}
+
+/**
+ * トーナメント表側の順位表は「見出し2行 + チーム行」で組み、組ごとに1行あけて並べる。
+ * 入力欄を試合管理から参照するので、双方で同じ行計算を使う必要がある。
+ */
+export function jankenRow(tournament, groupIndex, memberIndex) {
+  let row = STANDINGS_DISPLAY_START;
+  for (const group of tournament.groups) {
+    row += 2; // 見出しと表ヘッダ
+    if (group.index === groupIndex) return row + memberIndex;
+    row += group.teams.length + 1;
+  }
+  throw new Error(`組が見つかりません: ${groupIndex}`);
+}
+
+/**
+ * トーナメント表で順位表が始まる行。
+ * タイトル・説明の2行を書いたあと1行あけるので4行目から。
+ * ここを定数で持つと表示側とずれるため、レイアウト側と同じ根拠を1箇所に置く。
+ */
+export const STANDINGS_DISPLAY_START = 4;
 
 function col(n) {
   let s = '';

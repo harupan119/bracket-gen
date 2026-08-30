@@ -42,4 +42,7 @@ export const ROLES = {
   input:       { size: 'body',    bold: true, fill: 'inputFill', box: true, align: 'CENTER', text: true },
   body:        { size: 'body',    box: true },
   label:       { size: 'body',    bold: true, box: true, align: 'CENTER' },
+  // 平常時は白。同着が起きたときだけ条件付き書式で黄色くする。
+  // 常時黄色だと「入力必須」に見えてしまう。
+  optional:    { size: 'body',    bold: true, box: true, align: 'CENTER', text: true },
 };

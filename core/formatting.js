@@ -8,6 +8,17 @@ const WINNER_FORMAT = {
 };
 const DONE_FORMAT = { backgroundColor: toRgb(COLORS.resultDone) };
 
+/** 列番号を列名へ。a1() は行番号込みなので、列だけ要るときはこちらを使う。 */
+function colName(n) {
+  let s = '';
+  while (n > 0) {
+    const r = (n - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
 const oneCell = (sheetId, row, col) => ({
   sheetId,
   startRowIndex: row - 1, endRowIndex: row,
@@ -62,6 +73,26 @@ export function buildConditionalFormatRules(tournament, grids, sheetIds) {
         }],
         customFormula(`=AND(${w}<>"",${p.cellRef}=${w})`),
         WINNER_FORMAT
+      )
+    );
+  }
+
+  // じゃんけん欄は常に置いてあるが、規定で決まらない組だけ黄色くして気づけるようにする。
+  // Sheets は列を条件で出し入れできないので、色で「今これが要る」を伝える。
+  for (const cell of grids.bracket.cells.values()) {
+    if (!cell.style?.jankenOf) continue;
+    out.push(
+      rule(
+        [{
+          sheetId: sheetIds.bracket,
+          startRowIndex: cell.row - 1, endRowIndex: cell.row,
+          startColumnIndex: cell.col - 1, endColumnIndex: cell.col,
+        }],
+        // 判定に使う「要じゃんけん」の印は試合管理側が持っている。
+        // 条件付き書式は他シートを見られないので、同じ列に写した値を見る。
+        // 印は入力欄のすぐ右の隠し列にある。a1() は行番号を含むので、列名だけを取り出す。
+        customFormula(`=$${colName(cell.col + 1)}$${cell.row}<>""`),
+        { backgroundColor: toRgb(COLORS.resultPending), textFormat: { bold: true } }
       )
     );
   }

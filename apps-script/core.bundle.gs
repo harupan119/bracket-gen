@@ -867,7 +867,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
   var W_WEIGHT = 1e6;
   var H2H_WEIGHT = 1e3;
   var GAP = 2;
-  var COLS = { team: 1, wins: 2, got: 3, lost: 4, h2h: 5, score: 6, rank: 7, beat: 9 };
+  var COLS = { team: 1, wins: 2, got: 3, lost: 4, h2h: 5, base: 6, janken: 7, tie: 8, score: 9, rank: 10, beat: 12 };
   function standingsLayout(tournament) {
     let row = cellRefs.controlRow(tournament.matches.length) + GAP;
     return tournament.groups.map((group) => {
@@ -933,10 +933,20 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         const ratio = `IFERROR(${col(cols.got)}${r}/MAX(${col(cols.lost)}${r},1),0)`;
         g.set(
           r,
-          cols.score,
-          `=${col(cols.wins)}${r}*${W_WEIGHT}+${col(cols.h2h)}${r}*${H2H_WEIGHT}+${ratio}-${i}*0.0001`,
+          cols.base,
+          `=${col(cols.wins)}${r}*${W_WEIGHT}+${col(cols.h2h)}${r}*${H2H_WEIGHT}+${ratio}*10`,
           { helper: true }
         );
+        const baseRange = `${col(cols.base)}$${top}:${col(cols.base)}$${top + n - 1}`;
+        g.set(
+          r,
+          cols.tie,
+          `=IF(COUNTIF(${baseRange},${col(cols.base)}${r})>1,"\u8981\u3058\u3083\u3093\u3051\u3093","")`,
+          { helper: true }
+        );
+        g.set(r, cols.janken, `=IFERROR(${jankenInput(tournament, block.group, i)},"")`, { helper: true });
+        const jk = `IF(${col(cols.janken)}${r}="",0,(${n + 1}-${col(cols.janken)}${r})*0.01)`;
+        g.set(r, cols.score, `=${col(cols.base)}${r}+${jk}-${i}*0.0001`, { helper: true });
         const scoreRange = `${col(cols.score)}$${top}:${col(cols.score)}$${top + n - 1}`;
         g.set(r, cols.rank, `=RANK(${col(cols.score)}${r},${scoreRange})`, { helper: true });
       });
@@ -949,6 +959,20 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     const ranks = `'${TABS.control}'!${col(b.cols.rank)}$${b.top}:${col(b.cols.rank)}$${b.top + b.size - 1}`;
     return `IFERROR(INDEX(${teams},MATCH(${rank},${ranks},0)),"")`;
   }
+  function jankenInput(tournament, groupIndex, memberIndex) {
+    const row = jankenRow(tournament, groupIndex, memberIndex);
+    return `'${TABS.bracket}'!$F$${row}`;
+  }
+  function jankenRow(tournament, groupIndex, memberIndex) {
+    let row = STANDINGS_DISPLAY_START;
+    for (const group of tournament.groups) {
+      row += 2;
+      if (group.index === groupIndex) return row + memberIndex;
+      row += group.teams.length + 1;
+    }
+    throw new Error(`\u7D44\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${groupIndex}`);
+  }
+  var STANDINGS_DISPLAY_START = 4;
   function col(n) {
     let s = "";
     while (n > 0) {
@@ -1432,22 +1456,26 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       g.cells.get(`${row},3`).value = "\u52DD";
       g.cells.get(`${row},4`).value = "\u76F4\u5BFE";
       g.cells.get(`${row},5`).value = "\u30BB\u30C3\u30C8";
-      g.merge(row, 5, row, 6);
+      g.cells.get(`${row},6`).value = "\u3058\u3083\u3093\u3051\u3093";
       row += 1;
       for (let i = 0; i < block.size; i++) {
         const r = block.top + i;
-        g.set(row, 1, `=${ctrl("G", r)}`, { role: "label" });
+        const expected = jankenRow(tournament, block.group, i);
+        if (row !== expected) {
+          throw new Error(`\u3058\u3083\u3093\u3051\u3093\u5165\u529B\u6B04\u306E\u884C\u304C\u305A\u308C\u3066\u3044\u307E\u3059: \u8868\u793A=${row} \u53C2\u7167=${expected}`);
+        }
+        g.set(row, 1, `=${ctrl("J", r)}`, { role: "label" });
         g.set(row, 2, `=${ctrl("A", r)}`, { role: "slot" });
         g.set(row, 3, `=${ctrl("B", r)}`, { role: "body" });
         g.set(row, 4, `=${ctrl("E", r)}`, { role: "body" });
         g.set(row, 5, `=${ctrl("C", r)}&"-"&${ctrl("D", r)}`, { role: "body" });
-        g.set(row, 6, "", { role: "body" });
-        g.merge(row, 5, row, 6);
+        g.set(row, 6, "", { role: "optional", jankenOf: ctrl("H", r) });
+        g.set(row, 7, `=${ctrl("H", r)}`, { helper: true });
         row += 1;
       }
       row += 1;
     }
-    g.set(row, 1, "\u203B \u9806\u4F4D\u306F \u52DD\u6570 \u2192 \u76F4\u63A5\u5BFE\u6C7A \u2192 \u30BB\u30C3\u30C8\u7387 \u306E\u9806\u3067\u6C7A\u3081\u307E\u3059\u30023\u30C1\u30FC\u30E0\u4EE5\u4E0A\u304C\u4E26\u3076\u3068\u76F4\u63A5\u5BFE\u6C7A\u3067\u306F\u6C7A\u307E\u3089\u305A\u3001\u30BB\u30C3\u30C8\u7387\u3067\u5206\u304B\u308C\u307E\u3059\u3002", { role: "note" });
+    g.set(row, 1, "\u203B \u9806\u4F4D\u306F \u52DD\u6570 \u2192 \u76F4\u63A5\u5BFE\u6C7A \u2192 \u30BB\u30C3\u30C8\u7387 \u306E\u9806\u3067\u6C7A\u3081\u307E\u3059\u3002\u3059\u3079\u3066\u4E26\u3093\u3060\u7D44\u306F\u300C\u3058\u3083\u3093\u3051\u3093\u300D\u6B04\u304C\u9EC4\u8272\u304F\u306A\u308B\u306E\u3067\u3001\u4EE3\u8868\u8005\u306E\u3058\u3083\u3093\u3051\u3093\u3067\u6C7A\u3081\u305F\u9806\u4F4D\uFF081\u304C\u52DD\u3061\uFF09\u3092\u5165\u308C\u3066\u304F\u3060\u3055\u3044\u3002", { role: "note" });
     g.merge(row, 1, row, 6);
     return row + 2;
   }
@@ -1495,7 +1523,10 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     // TEXT書式は必須。無いと "2-1" が日付として解釈され、勝敗判定の文字列比較が黙って外れる。
     input: { size: "body", bold: true, fill: "inputFill", box: true, align: "CENTER", text: true },
     body: { size: "body", box: true },
-    label: { size: "body", bold: true, box: true, align: "CENTER" }
+    label: { size: "body", bold: true, box: true, align: "CENTER" },
+    // 平常時は白。同着が起きたときだけ条件付き書式で黄色くする。
+    // 常時黄色だと「入力必須」に見えてしまう。
+    optional: { size: "body", bold: true, box: true, align: "CENTER", text: true }
   };
 
   // core/palette.js
@@ -1518,6 +1549,15 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }
   };
   var DONE_FORMAT = { backgroundColor: toRgb(COLORS.resultDone) };
+  function colName(n) {
+    let s = "";
+    while (n > 0) {
+      const r = (n - 1) % 26;
+      s = String.fromCharCode(65 + r) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
   var oneCell = (sheetId, row, col2) => ({
     sheetId,
     startRowIndex: row - 1,
@@ -1530,7 +1570,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
   });
   var customFormula = (f) => ({ type: "CUSTOM_FORMULA", values: [{ userEnteredValue: f }] });
   function buildConditionalFormatRules(tournament, grids, sheetIds) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     const out = [];
     for (const cell of grids.bracket.cells.values()) {
       const { winnerOf, championOf } = (_a = cell.style) != null ? _a : {};
@@ -1558,6 +1598,25 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
           }],
           customFormula(`=AND(${w}<>"",${p.cellRef}=${w})`),
           WINNER_FORMAT
+        )
+      );
+    }
+    for (const cell of grids.bracket.cells.values()) {
+      if (!((_d = cell.style) == null ? void 0 : _d.jankenOf)) continue;
+      out.push(
+        rule(
+          [{
+            sheetId: sheetIds.bracket,
+            startRowIndex: cell.row - 1,
+            endRowIndex: cell.row,
+            startColumnIndex: cell.col - 1,
+            endColumnIndex: cell.col
+          }],
+          // 判定に使う「要じゃんけん」の印は試合管理側が持っている。
+          // 条件付き書式は他シートを見られないので、同じ列に写した値を見る。
+          // 印は入力欄のすぐ右の隠し列にある。a1() は行番号を含むので、列名だけを取り出す。
+          customFormula(`=$${colName(cell.col + 1)}$${cell.row}<>""`),
+          { backgroundColor: toRgb(COLORS.resultPending), textFormat: { bold: true } }
         )
       );
     }
