@@ -9,6 +9,7 @@ export class Grid {
     this.merges = [];         // { r1, c1, r2, c2 }
     this.borders = [];        // { r1, c1, r2, c2, side } side: 'bottom' | 'left'
     this.paths = [];          // { r1, r2, col, cellRef, winnerOf } 勝ち上がり経路の塗り範囲
+    this.advances = [];       // { r1, r2, c1, c2, rankCol, cutoff } 予選通過ラインの塗り範囲
     this.columns = new Map(); // col -> width
   }
 

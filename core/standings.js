@@ -1,4 +1,6 @@
 import { TABS, cellRefs } from './sheets.js';
+import { STANDINGS_COLS, standingsLayout, jankenRow } from './rows.js';
+import { teamLabel } from './util.js';
 import { getScoring } from './scoring.js';
 
 /**
@@ -18,25 +20,7 @@ import { getScoring } from './scoring.js';
 const W_WEIGHT = 1e6;
 const H2H_WEIGHT = 1e3;
 
-const GAP = 2;
-// base は「3段の判定だけで出した点」。同着の検出に使う。
-// janken は運営がトーナメント表側で入れる、じゃんけんの順位（1が勝ち）。
-const COLS = { team: 1, wins: 2, got: 3, lost: 4, h2h: 5, base: 6, janken: 7, tie: 8, score: 9, rank: 10, beat: 12 };
-
-/**
- * 順位表の配置を、グリッドを作らずに算出する。
- * ブラケットの出場者（「A組1位」）も順位表を参照するので、
- * 書き込む側と参照する側で同じ計算を使う必要がある。
- */
-export function standingsLayout(tournament) {
-  // 試合行の直後から始める
-  let row = cellRefs.controlRow(tournament.matches.length) + GAP;
-  return tournament.groups.map((group) => {
-    const block = { group: group.index, label: group.label, head: row, top: row + 1, size: group.teams.length, cols: COLS };
-    row = block.top + block.size + GAP;
-    return block;
-  });
-}
+const COLS = STANDINGS_COLS;
 
 /** 組の予選試合が試合管理タブの何行目から何行目までにあるか。 */
 export function groupMatchRows(tournament, groupIndex) {
@@ -67,8 +51,11 @@ export function writeStandings(g, tournament) {
     group.teams.forEach((teamIndex, i) => {
       const r = top + i;
       const me = `$A$${r}`;
+      // 試合の行と同じ「未入力なら（Aチーム）」の形にそろえる。
+      // 素の参照にすると、チーム名が未入力のとき順位表だけが空文字を持ち、
+      // 試合の行の「（Aチーム）」と一致しなくなって勝数もセット数も0のままになる。
       const name = cellRefs.teamName(teamIndex);
-      g.set(r, cols.team, `=${name}`, { helper: true });
+      g.set(r, cols.team, `=IF(${name}="","（${teamLabel(teamIndex)}チーム）",${name})`, { helper: true });
 
       // 勝数
       g.set(r, cols.wins, `=COUNTIF($E$${first}:$E$${last},${col(cols.team)}${r})`, { helper: true });
@@ -140,32 +127,12 @@ export function groupRankFormula(tournament, groupIndex, rank) {
   return `IFERROR(INDEX(${teams},MATCH(${rank},${ranks},0)),"")`;
 }
 
-/** じゃんけん入力欄の位置。トーナメント表の予選順位表に置く。 */
+/** じゃんけん入力欄の位置。入力用タブに置く（記入は1タブに集める）。 */
 export function jankenInput(tournament, groupIndex, memberIndex) {
-  const row = jankenRow(tournament, groupIndex, memberIndex);
-  return `'${TABS.bracket}'!$F$${row}`;
+  return `'${TABS.mobile}'!$C$${jankenRow(tournament, groupIndex, memberIndex)}`;
 }
 
-/**
- * トーナメント表側の順位表は「見出し2行 + チーム行」で組み、組ごとに1行あけて並べる。
- * 入力欄を試合管理から参照するので、双方で同じ行計算を使う必要がある。
- */
-export function jankenRow(tournament, groupIndex, memberIndex) {
-  let row = STANDINGS_DISPLAY_START;
-  for (const group of tournament.groups) {
-    row += 2; // 見出しと表ヘッダ
-    if (group.index === groupIndex) return row + memberIndex;
-    row += group.teams.length + 1;
-  }
-  throw new Error(`組が見つかりません: ${groupIndex}`);
-}
-
-/**
- * トーナメント表で順位表が始まる行。
- * タイトル・説明の2行を書いたあと1行あけるので4行目から。
- * ここを定数で持つと表示側とずれるため、レイアウト側と同じ根拠を1箇所に置く。
- */
-export const STANDINGS_DISPLAY_START = 4;
+export { standingsLayout };
 
 function col(n) {
   let s = '';

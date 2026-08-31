@@ -98,7 +98,7 @@ export function buildSpreadsheetPayload(tournament) {
   requests.push(
     ...buildConditionalFormatRules(
       tournament,
-      { bracket: sheets[0].grid, progress: sheets[1].grid },
+      { bracket: sheets[0].grid, progress: sheets[1].grid, mobile: sheets[2].grid },
       { bracket: 0, progress: 1, mobile: 2, control: 3 }
     )
   );

@@ -43,21 +43,42 @@ test('CUSTOM_FORMULA は他シートを参照せず、同一シートの補助�
   }
 });
 
-test('勝者の着色は赤背景＋白太字、結果済みは緑背景', () => {
+test('経路は枠も線も同じ濃い赤で塗られる（帯が途切れない）', () => {
+  // 実物のスプレッドシートは経路を1色の濃い赤で塗っている。
+  // 枠と線で色を変えると、境目で色が切り替わって帯が分断されて見える。
   const rs = rules(make());
-  const red = rs.filter((r) => r.booleanRule.format.textFormat?.bold);
-  const green = rs.filter((r) => !r.booleanRule.format.textFormat);
-  assert.ok(red.length > 0 && green.length > 0);
+  const red = rs.filter((r) => {
+    const bg = r.booleanRule.format.backgroundColor;
+    return bg.red > 0.8 && bg.green < 0.3;
+  });
+  // 入力済みの緑 #E2F0D9 は赤成分も 0.89 あるので、赤成分だけでは経路と分けられない。
+  const done = rs.filter((r) => r.booleanRule.format.backgroundColor.green > 0.8
+    && !r.booleanRule.format.textFormat);
+  assert.ok(red.length > 0, '経路のルール');
+  assert.ok(done.length > 0, '入力済みのルール');
+
+  // 枠も連結列も同じ書式であること。ここが分かれると帯が途切れる。
   for (const r of red) {
-    assert.deepEqual(r.booleanRule.format.textFormat.foregroundColor, { red: 1, green: 1, blue: 1 });
-    assert.ok(r.booleanRule.format.backgroundColor.red > 0.8, '赤背景');
+    assert.deepEqual(
+      r.booleanRule.format.textFormat.foregroundColor,
+      { red: 1, green: 1, blue: 1 },
+      '経路の文字は白'
+    );
+    assert.equal(r.booleanRule.format.textFormat.bold, true, '経路は太字');
   }
-  for (const r of green) {
+
+  // 経路はチーム枠（偶数列）と連結列（奇数列）の両方を覆う
+  const cols = new Set();
+  for (const r of red) for (const g of r.ranges) if (g.sheetId === 0) cols.add(g.startColumnIndex + 1);
+  assert.ok([...cols].some((c) => c % 2 === 0), 'チーム枠の列が塗られていない');
+  assert.ok([...cols].some((c) => c % 2 === 1), '連結列が塗られていない');
+
+  for (const r of done) {
     assert.ok(r.booleanRule.format.backgroundColor.green > 0.8, '緑背景');
   }
 });
 
-test('スマホ用の結果列と勝者列に範囲ルールが1本ずつ付く', () => {
+test('入力用の結果列と勝者列に範囲ルールが1本ずつ付く', () => {
   const t = make();
   const mobile = rules(t).filter((r) => r.ranges[0].sheetId === 2);
   assert.equal(mobile.length, 2);

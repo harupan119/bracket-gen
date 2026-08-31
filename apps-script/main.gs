@@ -48,6 +48,13 @@ function generate(config) {
   var payload = BracketGen.buildSpreadsheetPayload(tournament);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
+  // 旧版が作った「スマホ用」タブは名前を引き継ぐ。
+  // 放置すると、中身の無いタブが1枚余ったまま配られてしまう。
+  var legacy = ss.getSheetByName('スマホ用');
+  if (legacy && !ss.getSheetByName(BracketGen.TABS.mobile)) {
+    legacy.setName(BracketGen.TABS.mobile);
+  }
+
   // 4タブを用意して中身を空にする。前回の条件付き書式が残ると累積するので明示的に消す。
   var map = {};
   payload.sheets.forEach(function (s, i) {

@@ -2,11 +2,20 @@ import { a1 } from './grid.js';
 import { helperCell } from './layout.js';
 import { COLORS, toRgb } from './palette.js';
 
+// 経路は枠も連結列も同じ濃い赤で塗る。実物（バトミントン団体戦）がこの方式で、
+// 1色でつなぐことで帯が途切れず、勝ち上がりが1本の道に見える。
+// 枠だけ淡くすると、枠と連結列の境目で色が変わって帯が分断される。
 const WINNER_FORMAT = {
   backgroundColor: toRgb(COLORS.winner),
   textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } },
 };
+const PATH_FORMAT = WINNER_FORMAT;
 const DONE_FORMAT = { backgroundColor: toRgb(COLORS.resultDone) };
+// 予選通過ラインの行。太字を足して、色が見えにくい環境でも判別できるようにする。
+const ADVANCE_FORMAT = {
+  backgroundColor: toRgb(COLORS.advance),
+  textFormat: { bold: true },
+};
 
 /** 列番号を列名へ。a1() は行番号込みなので、列だけ要るときはこちらを使う。 */
 function colName(n) {
@@ -72,35 +81,55 @@ export function buildConditionalFormatRules(tournament, grids, sheetIds) {
           startColumnIndex: p.col - 1, endColumnIndex: p.col,
         }],
         customFormula(`=AND(${w}<>"",${p.cellRef}=${w})`),
-        WINNER_FORMAT
+        PATH_FORMAT
+      )
+    );
+  }
+
+  // 予選の通過ライン。順位が定員以内の行を塗る。
+  // 順位はこのシート内（1列目）に出ているので、他シートを見に行かずに済む。
+  for (const a of grids.bracket.advances ?? []) {
+    out.push(
+      rule(
+        [{
+          sheetId: sheetIds.bracket,
+          startRowIndex: a.r1 - 1, endRowIndex: a.r2,
+          startColumnIndex: a.c1 - 1, endColumnIndex: a.c2,
+        }],
+        customFormula(`=AND($${colName(a.rankCol)}${a.r1}<>"",$${colName(a.rankCol)}${a.r1}<=${a.cutoff})`),
+        ADVANCE_FORMAT
       )
     );
   }
 
   // じゃんけん欄は常に置いてあるが、規定で決まらない組だけ黄色くして気づけるようにする。
   // Sheets は列を条件で出し入れできないので、色で「今これが要る」を伝える。
-  for (const cell of grids.bracket.cells.values()) {
-    if (!cell.style?.jankenOf) continue;
-    out.push(
-      rule(
-        [{
-          sheetId: sheetIds.bracket,
-          startRowIndex: cell.row - 1, endRowIndex: cell.row,
-          startColumnIndex: cell.col - 1, endColumnIndex: cell.col,
-        }],
-        // 判定に使う「要じゃんけん」の印は試合管理側が持っている。
-        // 条件付き書式は他シートを見られないので、同じ列に写した値を見る。
-        // 印は入力欄のすぐ右の隠し列にある。a1() は行番号を含むので、列名だけを取り出す。
-        customFormula(`=$${colName(cell.col + 1)}$${cell.row}<>""`),
-        { backgroundColor: toRgb(COLORS.resultPending), textFormat: { bold: true } }
-      )
-    );
+  //
+  // 入力用タブは記入欄そのもの、トーナメント表は「入力用へ行け」という合図。
+  // どちらも判定は同じで、すぐ右の列に写した「要じゃんけん」の印を見る。
+  // 条件付き書式は他シートを参照できないため、この写しが要る。
+  for (const [key, grid] of [['bracket', grids.bracket], ['mobile', grids.mobile]]) {
+    for (const cell of grid.cells.values()) {
+      if (!cell.style?.jankenOf) continue;
+      out.push(
+        rule(
+          [{
+            sheetId: sheetIds[key],
+            startRowIndex: cell.row - 1, endRowIndex: cell.row,
+            startColumnIndex: cell.col - 1, endColumnIndex: cell.col,
+          }],
+          // a1() は行番号を含むので、列名だけを取り出す。
+          customFormula(`=$${colName(cell.col + 1)}$${cell.row}<>""`),
+          { backgroundColor: toRgb(COLORS.resultPending), textFormat: { bold: true } }
+        )
+      );
+    }
   }
 
   const n = tournament.matches.length;
   const mobileStart = 5;
 
-  // スマホ用: 結果が入ったら緑、勝者が出たら赤
+  // 入力用: 結果が入ったら緑、勝者が出たら赤
   out.push(
     rule(
       [{ sheetId: sheetIds.mobile, startRowIndex: mobileStart - 1, endRowIndex: mobileStart - 1 + n, startColumnIndex: 2, endColumnIndex: 3 }],

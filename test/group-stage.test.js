@@ -157,11 +157,12 @@ test('決勝トーナメントは予選が全部終わってから始まる', as
 });
 
 test('規定で決まらないときのためのじゃんけん欄が全チームぶん出る', async () => {
-  const { layoutBracketSheet } = await import('../core/layout.js');
+  // 入力は入力用タブに集める。順位表側は表示だけで、記入欄は持たない。
+  const { layoutMobileSheet, layoutBracketSheet } = await import('../core/sheets.js');
   const { buildTournament } = await import('../core/index.js');
   for (const [teams, groups] of [[8, 2], [12, 3], [16, 4], [20, 5]]) {
     const t = buildTournament({ format: 'group-stage', teams, groups, courts: 2, scoring: 'sets-of-3' });
-    const g = layoutBracketSheet(t);
+    const g = layoutMobileSheet(t);
     const inputs = [...g.cells.values()].filter((c) => c.style.jankenOf);
     assert.equal(inputs.length, teams, `${teams}人${groups}組`);
     // 平常時は白。同着のときだけ条件付き書式で黄色くする。
@@ -175,14 +176,14 @@ test('規定で決まらないときのためのじゃんけん欄が全チー�
 
 test('じゃんけん欄の位置が表示側と参照側で一致する', async () => {
   // ここがずれると、試合管理が別のセルを読んで順位が変わってしまう。
-  const { layoutBracketSheet } = await import('../core/layout.js');
+  const { layoutMobileSheet } = await import('../core/sheets.js');
   const { buildTournament } = await import('../core/index.js');
-  const { jankenRow } = await import('../core/standings.js');
+  const { jankenRow } = await import('../core/rows.js');
   for (const [teams, groups] of [[8, 2], [12, 3], [20, 5]]) {
     const t = buildTournament({ format: 'group-stage', teams, groups, courts: 2, scoring: 'sets-of-3' });
     // レイアウト側に不一致を検出する番人が入っているので、例外なく組めれば一致している
-    assert.doesNotThrow(() => layoutBracketSheet(t), `${teams}人${groups}組`);
-    const g = layoutBracketSheet(t);
+    assert.doesNotThrow(() => layoutMobileSheet(t), `${teams}人${groups}組`);
+    const g = layoutMobileSheet(t);
     const rows = [...g.cells.values()].filter((c) => c.style.jankenOf).map((c) => c.row).sort((a, b) => a - b);
     const expected = [];
     for (const group of t.groups) {
@@ -203,7 +204,10 @@ test('同着のときだけじゃんけん欄が色づく', async () => {
       const f = r.booleanRule.format;
       return f.backgroundColor?.red > 0.95 && f.backgroundColor?.blue < 0.9 && !f.textFormat?.foregroundColor;
     });
-  assert.equal(rules.length, t.teams, 'じゃんけん欄のルール数がチーム数と合わない');
+  // 入力用タブの記入欄と、トーナメント表側の「入力用へ行け」という合図の2箇所に出る。
+  assert.equal(rules.length, t.teams * 2, 'じゃんけん欄のルール数がチーム数の2倍と合わない');
+  const sheetIds = new Set(rules.map((r) => r.ranges[0].sheetId));
+  assert.deepEqual([...sheetIds].sort(), [0, 2], 'トーナメント表と入力用の両方に出ていない');
   for (const r of rules) {
     const f = r.booleanRule.condition.values[0].userEnteredValue;
     // 隣の隠し列（要じゃんけんの印）を見る。条件付き書式は他シートを見られない。

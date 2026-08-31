@@ -45,4 +45,6 @@ export const ROLES = {
   // 平常時は白。同着が起きたときだけ条件付き書式で黄色くする。
   // 常時黄色だと「入力必須」に見えてしまう。
   optional:    { size: 'body',    bold: true, box: true, align: 'CENTER', text: true },
+  // シード印。チーム名の文字列に足すと勝ち上がり判定の文字列比較が外れるので、左隣に置く。
+  seed:        { size: 'body',    bold: true, color: 'accent', align: 'CENTER' },
 };

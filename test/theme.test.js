@@ -122,11 +122,13 @@ test('入力欄が黄色地・太字・TEXT書式になり、全試合ぶんを�
     const g = r.repeatCell.range;
     covered += (g.endRowIndex - g.startRowIndex) * (g.endColumnIndex - g.startColumnIndex);
   }
-  assert.equal(covered, t.matches.length, 'スマホ用の入力欄の数が試合数と合わない');
+  assert.equal(covered, t.matches.length, '入力用の入力欄の数が試合数と合わない');
 });
 
 test('列幅が実物の実測値と一致する', () => {
-  // 試合番号7 / チーム名20 / 連結線5 / 説明26
+  // 試合番号7 / チーム名20 / 連結線4 / 説明26
+  // 連結線4文字＝30px は、実物のスプレッドシート（バトミントン団体戦）の実測値と同じ。
+  // ここを塗って経路の帯にするので、幅が変わると帯の太さが変わる。
   const p = buildSpreadsheetPayload(make());
   const widths = new Map();
   for (const r of p.requests) {
@@ -136,11 +138,13 @@ test('列幅が実物の実測値と一致する', () => {
   }
   assert.equal(widths.get(1), 9, '試合番号');
   assert.equal(widths.get(2), 20, 'チーム名');
-  assert.equal(widths.get(3), 5, '連結線');
-  assert.equal(widths.get(6), 26, '説明');
+  assert.equal(widths.get(3), 4, '連結線');
+  // 説明列はブラケットの3ラウンド目の箱でもある。下の表に合わせて広げると、
+  // その箱だけ横に伸びて経路が1箇所だけ板になる。表側は 5〜6列の結合で幅を確保する。
+  assert.equal(widths.get(6), 20, '説明（箱の幅に揃える）');
 });
 
-test('スマホ用は見出し行が固定される', () => {
+test('入力用は見出し行が固定される', () => {
   const p = buildSpreadsheetPayload(make());
   const frozen = p.requests.find(
     (r) => r.updateSheetProperties?.properties.sheetId === 2

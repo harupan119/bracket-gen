@@ -783,6 +783,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       this.merges = [];
       this.borders = [];
       this.paths = [];
+      this.advances = [];
       this.columns = /* @__PURE__ */ new Map();
     }
     key(row, col2) {
@@ -863,19 +864,55 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     return s + row;
   }
 
-  // core/standings.js
-  var W_WEIGHT = 1e6;
-  var H2H_WEIGHT = 1e3;
+  // core/rows.js
+  var TEAM_INPUT_ROW = 6;
+  var MOBILE_ROW = 5;
+  var CONTROL_ROW = 2;
+  var controlRow = (i) => CONTROL_ROW + i;
   var GAP = 2;
-  var COLS = { team: 1, wins: 2, got: 3, lost: 4, h2h: 5, base: 6, janken: 7, tie: 8, score: 9, rank: 10, beat: 12 };
+  var STANDINGS_COLS = {
+    team: 1,
+    wins: 2,
+    got: 3,
+    lost: 4,
+    h2h: 5,
+    base: 6,
+    janken: 7,
+    tie: 8,
+    score: 9,
+    rank: 10,
+    beat: 12
+  };
   function standingsLayout(tournament) {
-    let row = cellRefs.controlRow(tournament.matches.length) + GAP;
+    let row = controlRow(tournament.matches.length) + GAP;
     return tournament.groups.map((group) => {
-      const block = { group: group.index, label: group.label, head: row, top: row + 1, size: group.teams.length, cols: COLS };
+      const block = {
+        group: group.index,
+        label: group.label,
+        head: row,
+        top: row + 1,
+        size: group.teams.length,
+        cols: STANDINGS_COLS
+      };
       row = block.top + block.size + GAP;
       return block;
     });
   }
+  function jankenBase(tournament) {
+    return MOBILE_ROW + tournament.matches.length + 3;
+  }
+  function jankenRow(tournament, groupIndex, memberIndex) {
+    let row = jankenBase(tournament);
+    for (const group of tournament.groups) {
+      if (group.index === groupIndex) return row + memberIndex;
+      row += group.teams.length;
+    }
+    throw new Error(`\u7D44\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${groupIndex}`);
+  }
+
+  // core/standings.js
+  var W_WEIGHT = 1e6;
+  var H2H_WEIGHT = 1e3;
   function groupMatchRows(tournament, groupIndex) {
     const idx = tournament.matches.map((m, i) => ({ m, i })).filter(({ m }) => m.stage === "group" && m.group === groupIndex).map(({ i }) => cellRefs.controlRow(i));
     return { first: Math.min(...idx), last: Math.max(...idx) };
@@ -894,7 +931,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         const r = top + i;
         const me = `$A$${r}`;
         const name = cellRefs.teamName(teamIndex);
-        g.set(r, cols.team, `=${name}`, { helper: true });
+        g.set(r, cols.team, `=IF(${name}="","\uFF08${teamLabel(teamIndex)}\u30C1\u30FC\u30E0\uFF09",${name})`, { helper: true });
         g.set(r, cols.wins, `=COUNTIF($E$${first}:$E$${last},${col(cols.team)}${r})`, { helper: true });
         if (hasSets) {
           g.set(
@@ -960,19 +997,8 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     return `IFERROR(INDEX(${teams},MATCH(${rank},${ranks},0)),"")`;
   }
   function jankenInput(tournament, groupIndex, memberIndex) {
-    const row = jankenRow(tournament, groupIndex, memberIndex);
-    return `'${TABS.bracket}'!$F$${row}`;
+    return `'${TABS.mobile}'!$C$${jankenRow(tournament, groupIndex, memberIndex)}`;
   }
-  function jankenRow(tournament, groupIndex, memberIndex) {
-    let row = STANDINGS_DISPLAY_START;
-    for (const group of tournament.groups) {
-      row += 2;
-      if (group.index === groupIndex) return row + memberIndex;
-      row += group.teams.length + 1;
-    }
-    throw new Error(`\u7D44\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${groupIndex}`);
-  }
-  var STANDINGS_DISPLAY_START = 4;
   function col(n) {
     let s = "";
     while (n > 0) {
@@ -987,16 +1013,13 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
   var TABS = {
     bracket: "\u30C8\u30FC\u30CA\u30E1\u30F3\u30C8\u8868",
     progress: "\u9032\u884C\u8868",
-    mobile: "\u30B9\u30DE\u30DB\u7528",
+    mobile: "\u5165\u529B\u7528",
     control: "\u8A66\u5408\u7BA1\u7406"
   };
-  var TEAM_INPUT_ROW = 6;
-  var MOBILE_ROW = 5;
-  var CONTROL_ROW = 2;
   var cellRefs = {
     teamName: (i) => `'${TABS.progress}'!$B$${TEAM_INPUT_ROW + i}`,
     mobileInput: (i) => `'${TABS.mobile}'!$C$${MOBILE_ROW + i}`,
-    controlRow: (i) => CONTROL_ROW + i
+    controlRow
   };
   var matchIndex = (t, id) => t.matches.findIndex((m) => m.id === id);
   function controlCell(tournament, matchId, kind) {
@@ -1055,7 +1078,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     g.frozenRows = MOBILE_ROW - 1;
     const sc = getScoring(tournament.scoring);
     g.setColumnWidth(1, 8).setColumnWidth(2, 22).setColumnWidth(3, 12).setColumnWidth(4, 14);
-    g.set(1, 1, tournament.title || "\u30B9\u30DE\u30DB\u7528 \u7D50\u679C\u5165\u529B", { role: "title" });
+    g.set(1, 1, tournament.title || "\u7D50\u679C\u5165\u529B", { role: "title" });
     g.set(2, 1, `\u9EC4\u8272\u3044\u30BB\u30EB\u306B\u7D50\u679C\uFF08${sc.options.join(" / ")}\uFF09\u3092\u5165\u308C\u308B\u3068\u3001\u5168\u30BF\u30D6\u306E\u52DD\u8005\u30FB\u6B21\u6226\u30FB\u8272\u304C\u81EA\u52D5\u3067\u66F4\u65B0\u3055\u308C\u307E\u3059\u3002`, { role: "note" });
     ["\u8A66\u5408", "\u5BFE\u6226", "\u7D50\u679C", "\u52DD\u8005"].forEach((h, i) => g.set(4, i + 1, h, { role: "tableHeader" }));
     tournament.matches.forEach((m, i) => {
@@ -1066,7 +1089,32 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       g.set(r, 3, "", { role: "input", input: true, validation: sc.options });
       g.set(r, 4, `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`, { role: "slot" });
     });
+    if (tournament.groups) renderJankenInput(g, tournament);
     return g;
+  }
+  function renderJankenInput(g, tournament) {
+    let row = MOBILE_ROW + tournament.matches.length + 1;
+    g.set(row, 1, "\u25A0 \u3058\u3083\u3093\u3051\u3093\uFF08\u898F\u5B9A\u3067\u9806\u4F4D\u304C\u6C7A\u307E\u3089\u306A\u3044\u7D44\u3060\u3051\u8A18\u5165\uFF09", { role: "section" });
+    g.merge(row, 1, row, 4);
+    row += 1;
+    ["\u7D44", "\u30C1\u30FC\u30E0\u540D", "\u9806\u4F4D", "\u72B6\u614B"].forEach((h, i) => g.set(row, i + 1, h, { role: "tableHeader" }));
+    row += 1;
+    const blocks = standingsLayout(tournament);
+    for (const block of blocks) {
+      const group = tournament.groups[block.group];
+      group.teams.forEach((teamIndex, i) => {
+        const expected = jankenRow(tournament, group.index, i);
+        if (row !== expected) {
+          throw new Error(`\u3058\u3083\u3093\u3051\u3093\u5165\u529B\u6B04\u306E\u884C\u304C\u305A\u308C\u3066\u3044\u307E\u3059: \u8868\u793A=${row} \u53C2\u7167=${expected}`);
+        }
+        const name = cellRefs.teamName(teamIndex);
+        g.set(row, 1, group.label, { role: "body" });
+        g.set(row, 2, `=IF(${name}="","\uFF08${teamLabel(teamIndex)}\u30C1\u30FC\u30E0\uFF09",${name})`, { role: "slot" });
+        g.set(row, 4, `=IFERROR('${TABS.control}'!$H$${block.top + i},"")`, { role: "body" });
+        g.set(row, 3, "", { role: "optional", jankenOf: `$D$${row}` });
+        row += 1;
+      });
+    }
   }
   function layoutProgressSheet(tournament) {
     const g = new Grid(TABS.progress);
@@ -1110,13 +1158,16 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     // A: 試合番号（決勝R のような3文字ラベルまで収める）
     { col: 2, width: 20 },
     // B: 左チーム / ブラケット第1列
-    { col: 3, width: 5 },
-    // C: vs / 連結線
+    { col: 3, width: 4 },
+    // C: vs / 連結線（実物と同じ30px。ここを塗って経路の帯にする）
     { col: 4, width: 20 },
     // D: 右チーム / ブラケット第2列
-    { col: 5, width: 5 },
+    { col: 5, width: 4 },
     // E: 連結線
-    { col: 6, width: 26 }
+    // F は下の表の「行き先」「決定方法」にも使うが、幅はブラケットの箱に合わせる。
+    // ここだけ広くすると、ブラケットの3ラウンド目の箱だけが横に伸び、
+    // 経路を塗ったときに1箇所だけ赤い板になる。表側は 5〜6列の結合で幅を確保する。
+    { col: 6, width: 20 }
     // F: 説明 / ブラケット第3列
   ];
   function bracketCell(base, round, index) {
@@ -1152,7 +1203,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       g.set(helperRow(i), hc.loser, `=${controlCell(tournament, m.id, "loser")}`, { helper: true });
     });
     for (let c = 7; c <= lastBracketCol(tournament); c++) {
-      g.setColumnWidth(c, c % 2 === 0 ? 20 : 5);
+      g.setColumnWidth(c, c % 2 === 0 ? 20 : 4);
     }
     let row = 1;
     g.set(row, 1, tournament.title || `\u30C8\u30FC\u30CA\u30E1\u30F3\u30C8\u8868\uFF08${tournament.teams}\u30C1\u30FC\u30E0\u30FB\u5168${tournament.matches.length}\u8A66\u5408\uFF09`, { role: "title" });
@@ -1320,8 +1371,13 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         const bottom = bracketCell(base, j, p * 2 + 1);
         const parent = bracketCell(base, j + 1, p);
         const conn = top.col + 1;
-        if (has(j, p * 2)) g.border(top.row, top.col, top.row, top.col, "bottom");
-        if (has(j, p * 2 + 1)) g.border(bottom.row, bottom.col, bottom.row, bottom.col, "bottom");
+        const bothPlay = has(j, p * 2) && has(j, p * 2 + 1);
+        if (!bothPlay) {
+          g.border(parent.row, top.col, parent.row, conn, "bottom");
+          continue;
+        }
+        g.border(top.row, top.col, top.row, top.col, "bottom");
+        g.border(bottom.row, bottom.col, bottom.row, bottom.col, "bottom");
         g.border(top.row + 1, conn, bottom.row, conn, "left");
         g.border(parent.row, conn, parent.row, conn, "bottom");
       }
@@ -1356,7 +1412,9 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     var _a;
     const { levels } = tournament.tree;
     let row = startRow;
-    g.set(row, 1, `\u25A0 ${(_a = tournament.tree.title) != null ? _a : "\u672C\u6226"}`, { role: "section" });
+    const hasSeed = levels[0].some((x) => !x);
+    const seedNote = hasSeed ? "\u3000\uFF08\u2605\uFF1D\u30B7\u30FC\u30C9\u30671\u56DE\u6226\u306A\u3057\uFF09" : "";
+    g.set(row, 1, `\u25A0 ${(_a = tournament.tree.title) != null ? _a : "\u672C\u6226"}${seedNote}`, { role: "section" });
     g.merge(row, 1, row, 6);
     row += 1;
     const base = row;
@@ -1370,16 +1428,19 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       level.forEach((ref, i) => {
         if (!ref) return;
         if (j > 0 && ref.type !== "winner") return;
-        const { row: r, col: c } = bracketCell(base, j, i);
+        const { row: slotRow, col: c } = bracketCell(base, j, i);
+        const up = levels[j + 1] ? bracketCell(base, j + 1, Math.floor(i / 2)) : null;
+        const seeded = up && !level[i % 2 === 0 ? i + 1 : i - 1];
+        const r = seeded ? up.row : slotRow;
         const parent = levels[j + 1] ? levels[j + 1][Math.floor(i / 2)] : null;
         const style = { role: j === 0 ? "team" : "slot" };
         const next = nextMatchOf(tournament, ref, parent);
         if (next) style.winnerOf = next;
         else if (ref.type === "winner") style.championOf = ref.match;
         g.set(r, c, liveRefFormula(tournament, ref), style);
+        if (seeded && j === 0) g.set(r, c - 1, "\u2605", { role: "seed" });
         if (ref.type === "winner") inBracket.add(ref.match);
-        if (style.winnerOf && levels[j + 1]) {
-          const up = bracketCell(base, j + 1, Math.floor(i / 2));
+        if (style.winnerOf && up) {
           g.path(r, up.row, c + 1, a1(r, c), style.winnerOf);
         }
       });
@@ -1454,28 +1515,26 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       g.cells.get(`${row},1`).value = "\u9806\u4F4D";
       g.cells.get(`${row},2`).value = "\u30C1\u30FC\u30E0\u540D";
       g.cells.get(`${row},3`).value = "\u52DD";
-      g.cells.get(`${row},4`).value = "\u76F4\u5BFE";
-      g.cells.get(`${row},5`).value = "\u30BB\u30C3\u30C8";
+      g.cells.get(`${row},4`).value = "\u30BB\u30C3\u30C8";
+      g.cells.get(`${row},5`).value = "\u76F4\u5BFE";
       g.cells.get(`${row},6`).value = "\u3058\u3083\u3093\u3051\u3093";
       row += 1;
+      const bandTop = row;
       for (let i = 0; i < block.size; i++) {
         const r = block.top + i;
-        const expected = jankenRow(tournament, block.group, i);
-        if (row !== expected) {
-          throw new Error(`\u3058\u3083\u3093\u3051\u3093\u5165\u529B\u6B04\u306E\u884C\u304C\u305A\u308C\u3066\u3044\u307E\u3059: \u8868\u793A=${row} \u53C2\u7167=${expected}`);
-        }
         g.set(row, 1, `=${ctrl("J", r)}`, { role: "label" });
         g.set(row, 2, `=${ctrl("A", r)}`, { role: "slot" });
         g.set(row, 3, `=${ctrl("B", r)}`, { role: "body" });
-        g.set(row, 4, `=${ctrl("E", r)}`, { role: "body" });
-        g.set(row, 5, `=${ctrl("C", r)}&"-"&${ctrl("D", r)}`, { role: "body" });
-        g.set(row, 6, "", { role: "optional", jankenOf: ctrl("H", r) });
+        g.set(row, 4, `=${ctrl("C", r)}&"-"&${ctrl("D", r)}`, { role: "body" });
+        g.set(row, 5, `=${ctrl("E", r)}`, { role: "body" });
+        g.set(row, 6, `=IFERROR(${ctrl("G", r)},"")`, { role: "body", jankenOf: ctrl("H", r) });
         g.set(row, 7, `=${ctrl("H", r)}`, { helper: true });
         row += 1;
       }
+      g.advances.push({ r1: bandTop, r2: row - 1, c1: 1, c2: 5, rankCol: 1, cutoff: group.advance });
       row += 1;
     }
-    g.set(row, 1, "\u203B \u9806\u4F4D\u306F \u52DD\u6570 \u2192 \u76F4\u63A5\u5BFE\u6C7A \u2192 \u30BB\u30C3\u30C8\u7387 \u306E\u9806\u3067\u6C7A\u3081\u307E\u3059\u3002\u3059\u3079\u3066\u4E26\u3093\u3060\u7D44\u306F\u300C\u3058\u3083\u3093\u3051\u3093\u300D\u6B04\u304C\u9EC4\u8272\u304F\u306A\u308B\u306E\u3067\u3001\u4EE3\u8868\u8005\u306E\u3058\u3083\u3093\u3051\u3093\u3067\u6C7A\u3081\u305F\u9806\u4F4D\uFF081\u304C\u52DD\u3061\uFF09\u3092\u5165\u308C\u3066\u304F\u3060\u3055\u3044\u3002", { role: "note" });
+    g.set(row, 1, "\u203B \u4E0A\u4F4D\u306E\u8272\u4ED8\u304D\u304C\u6C7A\u52DD\u30C8\u30FC\u30CA\u30E1\u30F3\u30C8\u9032\u51FA\u3002\u9806\u4F4D\u306F \u52DD\u6570 \u2192 \u76F4\u63A5\u5BFE\u6C7A \u2192 \u30BB\u30C3\u30C8\u7387 \u306E\u9806\u3067\u6C7A\u3081\u307E\u3059\u3002\u3059\u3079\u3066\u4E26\u3093\u3060\u7D44\u306F\u300C\u3058\u3083\u3093\u3051\u3093\u300D\u6B04\u304C\u9EC4\u8272\u304F\u306A\u308B\u306E\u3067\u3001\u5165\u529B\u7528\u30BF\u30D6\u306E\u4E0B\u90E8\u306B\u3042\u308B\u300C\u3058\u3083\u3093\u3051\u3093\u300D\u6B04\u306B\u3001\u4EE3\u8868\u8005\u306E\u3058\u3083\u3093\u3051\u3093\u3067\u6C7A\u3081\u305F\u9806\u4F4D\uFF081\u304C\u52DD\u3061\uFF09\u3092\u5165\u308C\u3066\u304F\u3060\u3055\u3044\u3002", { role: "note" });
     g.merge(row, 1, row, 6);
     return row + 2;
   }
@@ -1526,7 +1585,9 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     label: { size: "body", bold: true, box: true, align: "CENTER" },
     // 平常時は白。同着が起きたときだけ条件付き書式で黄色くする。
     // 常時黄色だと「入力必須」に見えてしまう。
-    optional: { size: "body", bold: true, box: true, align: "CENTER", text: true }
+    optional: { size: "body", bold: true, box: true, align: "CENTER", text: true },
+    // シード印。チーム名の文字列に足すと勝ち上がり判定の文字列比較が外れるので、左隣に置く。
+    seed: { size: "body", bold: true, color: "accent", align: "CENTER" }
   };
 
   // core/palette.js
@@ -1535,12 +1596,18 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     // ブラケットの枝
     header: "#F1F3F4",
     winner: "#D93025",
-    // 勝者セル・勝ち上がり経路
+    // 勝ち上がり経路の線（連結列を塗る）
+    winnerBox: "#FCE8E6",
+    // 経路上のチーム枠の地。線より淡くしないと箱が潰れて帯に見える
+    winnerText: "#B31412",
+    // 経路上のチーム名。淡い地に白文字は読めないので濃い赤にする
     loser: "#9AA0A6",
     resultPending: "#FFF2CC",
     // 未入力の結果セル（黄）
-    resultDone: "#E2F0D9"
+    resultDone: "#E2F0D9",
     // 入力済みの結果セル（緑）
+    advance: "#D9EAD3"
+    // 予選通過ラインの行。入力済みの緑より一段濃くして区別する
   };
 
   // core/formatting.js
@@ -1548,7 +1615,12 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     backgroundColor: toRgb(COLORS.winner),
     textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }
   };
+  var PATH_FORMAT = WINNER_FORMAT;
   var DONE_FORMAT = { backgroundColor: toRgb(COLORS.resultDone) };
+  var ADVANCE_FORMAT = {
+    backgroundColor: toRgb(COLORS.advance),
+    textFormat: { bold: true }
+  };
   function colName(n) {
     let s = "";
     while (n > 0) {
@@ -1570,7 +1642,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
   });
   var customFormula = (f) => ({ type: "CUSTOM_FORMULA", values: [{ userEnteredValue: f }] });
   function buildConditionalFormatRules(tournament, grids, sheetIds) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e;
     const out = [];
     for (const cell of grids.bracket.cells.values()) {
       const { winnerOf, championOf } = (_a = cell.style) != null ? _a : {};
@@ -1597,28 +1669,43 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
             endColumnIndex: p.col
           }],
           customFormula(`=AND(${w}<>"",${p.cellRef}=${w})`),
-          WINNER_FORMAT
+          PATH_FORMAT
         )
       );
     }
-    for (const cell of grids.bracket.cells.values()) {
-      if (!((_d = cell.style) == null ? void 0 : _d.jankenOf)) continue;
+    for (const a of (_d = grids.bracket.advances) != null ? _d : []) {
       out.push(
         rule(
           [{
             sheetId: sheetIds.bracket,
-            startRowIndex: cell.row - 1,
-            endRowIndex: cell.row,
-            startColumnIndex: cell.col - 1,
-            endColumnIndex: cell.col
+            startRowIndex: a.r1 - 1,
+            endRowIndex: a.r2,
+            startColumnIndex: a.c1 - 1,
+            endColumnIndex: a.c2
           }],
-          // 判定に使う「要じゃんけん」の印は試合管理側が持っている。
-          // 条件付き書式は他シートを見られないので、同じ列に写した値を見る。
-          // 印は入力欄のすぐ右の隠し列にある。a1() は行番号を含むので、列名だけを取り出す。
-          customFormula(`=$${colName(cell.col + 1)}$${cell.row}<>""`),
-          { backgroundColor: toRgb(COLORS.resultPending), textFormat: { bold: true } }
+          customFormula(`=AND($${colName(a.rankCol)}${a.r1}<>"",$${colName(a.rankCol)}${a.r1}<=${a.cutoff})`),
+          ADVANCE_FORMAT
         )
       );
+    }
+    for (const [key, grid] of [["bracket", grids.bracket], ["mobile", grids.mobile]]) {
+      for (const cell of grid.cells.values()) {
+        if (!((_e = cell.style) == null ? void 0 : _e.jankenOf)) continue;
+        out.push(
+          rule(
+            [{
+              sheetId: sheetIds[key],
+              startRowIndex: cell.row - 1,
+              endRowIndex: cell.row,
+              startColumnIndex: cell.col - 1,
+              endColumnIndex: cell.col
+            }],
+            // a1() は行番号を含むので、列名だけを取り出す。
+            customFormula(`=$${colName(cell.col + 1)}$${cell.row}<>""`),
+            { backgroundColor: toRgb(COLORS.resultPending), textFormat: { bold: true } }
+          )
+        );
+      }
     }
     const n = tournament.matches.length;
     const mobileStart = 5;
@@ -1734,7 +1821,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     requests.push(
       ...buildConditionalFormatRules(
         tournament,
-        { bracket: sheets[0].grid, progress: sheets[1].grid },
+        { bracket: sheets[0].grid, progress: sheets[1].grid, mobile: sheets[2].grid },
         { bracket: 0, progress: 1, mobile: 2, control: 3 }
       )
     );

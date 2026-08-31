@@ -74,7 +74,7 @@ test('入力規則が全試合ぶん出て、選択肢がプリセットと一�
     const vs = p.requests.filter((r) => r.setDataValidation);
     assert.equal(vs.length, t.matches.length, name);
     for (const v of vs) {
-      assert.equal(v.setDataValidation.range.sheetId, 2, `${name}: 入力規則はスマホ用タブに置く`);
+      assert.equal(v.setDataValidation.range.sheetId, 2, `${name}: 入力規則は入力用タブに置く`);
       assert.deepEqual(
         v.setDataValidation.rule.condition.values.map((x) => x.userEnteredValue),
         getScoring(name).options, name
@@ -84,7 +84,7 @@ test('入力規則が全試合ぶん出て、選択肢がプリセットと一�
   }
 });
 
-test('入力欄は進行表のチーム名記入欄とスマホ用の結果欄だけ', () => {
+test('入力欄は進行表のチーム名記入欄と入力用の結果欄だけ', () => {
   const t = make();
   const p = buildSpreadsheetPayload(t);
   const byTab = new Map();
@@ -94,9 +94,9 @@ test('入力欄は進行表のチーム名記入欄とスマホ用の結果欄�
     const n = (g.endRowIndex - g.startRowIndex) * (g.endColumnIndex - g.startColumnIndex);
     byTab.set(g.sheetId, (byTab.get(g.sheetId) ?? 0) + n);
   }
-  assert.deepEqual([...byTab.keys()].sort(), [1, 2], '進行表(1)とスマホ用(2)だけ');
+  assert.deepEqual([...byTab.keys()].sort(), [1, 2], '進行表(1)と入力用(2)だけ');
   assert.equal(byTab.get(1), t.teams, '進行表のチーム名記入欄');
-  assert.equal(byTab.get(2), t.matches.length, 'スマホ用の結果欄');
+  assert.equal(byTab.get(2), t.matches.length, '入力用の結果欄');
 });
 
 test('16チーム4コートでも payload が壊れずに出る', () => {

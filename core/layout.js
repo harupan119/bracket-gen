@@ -1,16 +1,19 @@
 import { Grid, a1 } from './grid.js';
 import { liveRefFormula, controlCell } from './sheets.js';
-import { standingsLayout, jankenRow, STANDINGS_DISPLAY_START } from './standings.js';
+import { standingsLayout } from './standings.js';
 import { TABS } from './sheets.js';
 
 // 実物 8team_volleyball_base.xlsx と同じ列構成
 export const COLUMNS = [
   { col: 1, width: 9 },   // A: 試合番号（決勝R のような3文字ラベルまで収める）
   { col: 2, width: 20 },  // B: 左チーム / ブラケット第1列
-  { col: 3, width: 5 },   // C: vs / 連結線
+  { col: 3, width: 4 },   // C: vs / 連結線（実物と同じ30px。ここを塗って経路の帯にする）
   { col: 4, width: 20 },  // D: 右チーム / ブラケット第2列
-  { col: 5, width: 5 },   // E: 連結線
-  { col: 6, width: 26 },  // F: 説明 / ブラケット第3列
+  { col: 5, width: 4 },   // E: 連結線
+  // F は下の表の「行き先」「決定方法」にも使うが、幅はブラケットの箱に合わせる。
+  // ここだけ広くすると、ブラケットの3ラウンド目の箱だけが横に伸び、
+  // 経路を塗ったときに1箇所だけ赤い板になる。表側は 5〜6列の結合で幅を確保する。
+  { col: 6, width: 20 },  // F: 説明 / ブラケット第3列
 ];
 
 /**
@@ -73,10 +76,11 @@ export function layoutBracketSheet(tournament) {
     g.set(helperRow(i), hc.winner, `=${controlCell(tournament, m.id, 'winner')}`, { helper: true });
     g.set(helperRow(i), hc.loser, `=${controlCell(tournament, m.id, 'loser')}`, { helper: true });
   });
-  // 列幅は実物の実測値に合わせる: 試合番号7 / チーム名20 / 連結線5 / 説明26。
+  // 列幅は実物の実測値に合わせる: 試合番号7 / チーム名20 / 連結線3 / 説明26。
+  // 連結線は条件付き書式で塗って経路を示すため、太いと線ではなく矩形に見える。
   // 偶数列がチーム名、奇数列が連結線という並びは、そのままブラケット図の列構成になる。
   for (let c = 7; c <= lastBracketCol(tournament); c++) {
-    g.setColumnWidth(c, c % 2 === 0 ? 20 : 5);
+    g.setColumnWidth(c, c % 2 === 0 ? 20 : 4);
   }
 
   let row = 1;
@@ -281,8 +285,15 @@ function drawBranches(g, base, levelSizes, filled) {
       const bottom = bracketCell(base, j, p * 2 + 1);
       const parent = bracketCell(base, j + 1, p);
       const conn = top.col + 1;
-      if (has(j, p * 2)) g.border(top.row, top.col, top.row, top.col, 'bottom');
-      if (has(j, p * 2 + 1)) g.border(bottom.row, bottom.col, bottom.row, bottom.col, 'bottom');
+      const bothPlay = has(j, p * 2) && has(j, p * 2 + 1);
+      if (!bothPlay) {
+        // シード。対戦相手がいないので枝を組まず、親の高さをそのまま横切る直線にする。
+        // 枝を1本だけ描くと「片腕のないΛ」になり、試合があるように見えてしまう。
+        g.border(parent.row, top.col, parent.row, conn, 'bottom');
+        continue;
+      }
+      g.border(top.row, top.col, top.row, top.col, 'bottom');
+      g.border(bottom.row, bottom.col, bottom.row, bottom.col, 'bottom');
       g.border(top.row + 1, conn, bottom.row, conn, 'left');
       g.border(parent.row, conn, parent.row, conn, 'bottom');
     }
@@ -337,7 +348,9 @@ function subtitle(t) {
 function renderTree(g, tournament, startRow, inBracket) {
   const { levels } = tournament.tree;
   let row = startRow;
-  g.set(row, 1, `■ ${tournament.tree.title ?? '本戦'}`, { role: 'section' });
+  const hasSeed = levels[0].some((x) => !x);
+  const seedNote = hasSeed ? '　（★＝シードで1回戦なし）' : '';
+  g.set(row, 1, `■ ${tournament.tree.title ?? '本戦'}${seedNote}`, { role: 'section' });
   g.merge(row, 1, row, 6);
   row += 1;
   const base = row;
@@ -351,11 +364,16 @@ function renderTree(g, tournament, startRow, inBracket) {
 
   levels.forEach((level, j) => {
     level.forEach((ref, i) => {
-      if (!ref) return; // 不戦勝の枠
+      if (!ref) return; // 空きスロット。シードは直線で示すので、ここには何も置かない。
       // 2列目以降で試合を経ていない枠は、シードがそのまま通過しただけ。
       // ここに箱を描くと同じチーム名が2度並ぶので、枝線だけで通過を示す。
       if (j > 0 && ref.type !== 'winner') return;
-      const { row: r, col: c } = bracketCell(base, j, i);
+      const { row: slotRow, col: c } = bracketCell(base, j, i);
+      const up = levels[j + 1] ? bracketCell(base, j + 1, Math.floor(i / 2)) : null;
+      // 対戦相手がいないスロットはシード。枠を次ラウンドの高さへ移し、そこから真横に線を引く。
+      // 自分の行に置いたままだと、線が親の行まで折れて試合があるように見える。
+      const seeded = up && !level[i % 2 === 0 ? i + 1 : i - 1];
+      const r = seeded ? up.row : slotRow;
       // このスロットの勝ち上がり先は、ひとつ上のラウンドの対応スロット
       const parent = levels[j + 1] ? levels[j + 1][Math.floor(i / 2)] : null;
       const style = { role: j === 0 ? 'team' : 'slot' };
@@ -363,10 +381,12 @@ function renderTree(g, tournament, startRow, inBracket) {
       if (next) style.winnerOf = next;
       else if (ref.type === 'winner') style.championOf = ref.match;
       g.set(r, c, liveRefFormula(tournament, ref), style);
+      // シード印はチーム名の左隣へ。名前の文字列に足すと、勝ち上がりの条件付き書式が
+      // 「表示中の文字列＝勝者セル」で比較しているため一致しなくなる。
+      if (seeded && j === 0) g.set(r, c - 1, '★', { role: 'seed' });
       if (ref.type === 'winner') inBracket.add(ref.match);
       // 勝ち上がったら、次のラウンドへ向かう連結列を塗ってマーカー線にする
-      if (style.winnerOf && levels[j + 1]) {
-        const up = bracketCell(base, j + 1, Math.floor(i / 2));
+      if (style.winnerOf && up) {
         g.path(r, up.row, c + 1, a1(r, c), style.winnerOf);
       }
     });
@@ -468,33 +488,35 @@ function renderGroupStandings(g, tournament, startRow) {
     g.cells.get(`${row},1`).value = '順位';
     g.cells.get(`${row},2`).value = 'チーム名';
     g.cells.get(`${row},3`).value = '勝';
-    g.cells.get(`${row},4`).value = '直対';
-    g.cells.get(`${row},5`).value = 'セット';
+    // 幅の広い4列目にセット（「12-9」のような2桁同士が入る）、狭い5列目に直対（1桁）を置く。
+    // 列幅はブラケット図と共有していて、順位表だけ変えることはできない。
+    g.cells.get(`${row},4`).value = 'セット';
+    g.cells.get(`${row},5`).value = '直対';
     g.cells.get(`${row},6`).value = 'じゃんけん';
     row += 1;
 
+    const bandTop = row;
     for (let i = 0; i < block.size; i++) {
       const r = block.top + i;
-      // 入力欄の位置は試合管理側からも参照するので、行がずれると別のセルを指す
-      const expected = jankenRow(tournament, block.group, i);
-      if (row !== expected) {
-        throw new Error(`じゃんけん入力欄の行がずれています: 表示=${row} 参照=${expected}`);
-      }
       g.set(row, 1, `=${ctrl('J', r)}`, { role: 'label' });
       g.set(row, 2, `=${ctrl('A', r)}`, { role: 'slot' });
       g.set(row, 3, `=${ctrl('B', r)}`, { role: 'body' });
-      g.set(row, 4, `=${ctrl('E', r)}`, { role: 'body' });
-      g.set(row, 5, `=${ctrl('C', r)}&"-"&${ctrl('D', r)}`, { role: 'body' });
-      // 規定で決まらないときだけ使う入力欄。常に置いておき、必要なときに色で知らせる。
-      g.set(row, 6, '', { role: 'optional', jankenOf: ctrl('H', r) });
+      g.set(row, 4, `=${ctrl('C', r)}&"-"&${ctrl('D', r)}`, { role: 'body' });
+      g.set(row, 5, `=${ctrl('E', r)}`, { role: 'body' });
+      // 入力欄ではなく表示。記入は入力用タブに集めてある。
+      // 規定で決まらない組はここが黄色くなるので、入力用タブへ行く合図になる。
+      g.set(row, 6, `=IFERROR(${ctrl('G', r)},"")`, { role: 'body', jankenOf: ctrl('H', r) });
       // 条件付き書式は他シートを見られないので、「要じゃんけん」の印を隣の隠し列へ写す
       g.set(row, 7, `=${ctrl('H', r)}`, { helper: true });
       row += 1;
     }
+    // 通過ラインを色で示す。当日「誰が上がったか」を順位の数字を読まずに掴めるようにする。
+    // じゃんけん欄（6列目）は別の色で光るので、帯からは外す。
+    g.advances.push({ r1: bandTop, r2: row - 1, c1: 1, c2: 5, rankCol: 1, cutoff: group.advance });
     row += 1;
   }
 
-  g.set(row, 1, '※ 順位は 勝数 → 直接対決 → セット率 の順で決めます。すべて並んだ組は「じゃんけん」欄が黄色くなるので、代表者のじゃんけんで決めた順位（1が勝ち）を入れてください。', { role: 'note' });
+  g.set(row, 1, '※ 上位の色付きが決勝トーナメント進出。順位は 勝数 → 直接対決 → セット率 の順で決めます。すべて並んだ組は「じゃんけん」欄が黄色くなるので、入力用タブの下部にある「じゃんけん」欄に、代表者のじゃんけんで決めた順位（1が勝ち）を入れてください。', { role: 'note' });
   g.merge(row, 1, row, 6);
   return row + 2;
 }

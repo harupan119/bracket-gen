@@ -74,7 +74,7 @@ test('試合管理は自分より後ろの行を参照しない（循環参照�
   }
 });
 
-test('結果欄は全試合ぶんスマホ用の1列に一本化されている', () => {
+test('結果欄は全試合ぶん入力用の1列に一本化されている', () => {
   const t = make();
   const g = layoutControlSheet(t);
   const seen = new Set();
@@ -87,7 +87,7 @@ test('結果欄は全試合ぶんスマホ用の1列に一本化されている'
   assert.equal(seen.size, t.matches.length);
 });
 
-test('スマホ用の入力欄が全試合ぶんあり、選択肢がプリセットと一致する', () => {
+test('入力用の入力欄が全試合ぶんあり、選択肢がプリセットと一致する', () => {
   for (const name of Object.keys(SCORING)) {
     const t = make({ scoring: name });
     const g = layoutMobileSheet(t);
