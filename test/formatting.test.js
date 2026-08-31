@@ -112,11 +112,13 @@ test('勝ち上がり経路が連結列に引かれる', () => {
 
 test('経路の本数がブラケットのスロット数と釣り合う', async () => {
   const { layoutBracketSheet } = await import('../core/layout.js');
-  // 8チームなら 1回戦8 + 準決勝4 + 決勝2 = 14本
+  // 8チームなら 1回戦8 + 準決勝4 + 決勝2 = 14本。
+  // シードのある構成では、箱を描かない通過スロットにも帯を通すため本数が増える
+  // （通さないと、シードのチームの経路がそのラウンドで途切れる）。
   const cases = [
     ['single-elimination', 8, 14],
     ['full-placement', 8, 8],
-    ['double-elimination', 10, 19],
+    ['double-elimination', 10, 39],
   ];
   for (const [format, teams, expected] of cases) {
     const g = layoutBracketSheet(buildTournament({ format, teams, courts: 2, scoring: 'win-loss' }));
@@ -124,7 +126,106 @@ test('経路の本数がブラケットのスロット数と釣り合う', async
     for (const p of g.paths) {
       // 敗者側の大ラウンドは親と子が同じ行なので、経路は1セル（横方向の区間）になる
       assert.ok(p.r2 >= p.r1, `経路の範囲が逆転: ${p.r1}-${p.r2}`);
-      assert.ok(p.col % 2 === 1, '経路は連結列（奇数列）に引く');
+      // 通過スロット（シードが素通りする枠）は箱を描かないので、その枠自体も塗る。
+      // 実物のスプレッドシートも、経路が通る空の内容列を塗って帯をつないでいる。
+      assert.ok(p.col >= 2, `経路の列が不正: ${p.col}`);
+    }
+  }
+});
+
+test('シードのチームにも着色ルールが付く', async () => {
+  // シードは次のラウンドの枠が「同じチームの通過」なので、親スロットからは試合を引けない。
+  // ここを取りこぼすと、シードのチームだけ何回勝っても赤くならない（実シートで発覚）。
+  const { layoutBracketSheet } = await import('../core/layout.js');
+  for (const [format, teams] of [['double-elimination', 20], ['single-elimination', 10], ['single-elimination', 12]]) {
+    const g = layoutBracketSheet(buildTournament({ format, teams, courts: 2, scoring: 'sets-of-3' }));
+    const dark = [...g.cells.values()].filter(
+      (c) =>
+        ['team', 'slot'].includes(c.style?.role) &&
+        String(c.value).startsWith('=') &&
+        String(c.value).includes('チーム）') &&
+        !c.style.winnerOf &&
+        !c.style.championOf
+    );
+    assert.equal(dark.length, 0, `${format} ${teams}チーム: 着色ルールの無いチーム枠 ${dark.map((c) => `${c.row},${c.col}`).join(' ')}`);
+  }
+});
+
+test('条件付き書式の参照はすべて絶対参照', async () => {
+  // 式は範囲の左上を基準に行・列がずれて評価される。相対参照だと範囲の先頭行しか
+  // 一致せず、経路の帯が1セルで途切れる（実シートの effectiveFormat で発覚）。
+  const { buildSpreadsheetPayload } = await import('../core/payload.js');
+  for (const [format, teams] of [['double-elimination', 10], ['double-elimination', 20], ['single-elimination', 12], ['group-stage', 8]]) {
+    const rules = buildSpreadsheetPayload(buildTournament({ format, teams, courts: 2, scoring: 'sets-of-3' }))
+      .requests.filter((r) => r.addConditionalFormatRule)
+      .map((r) => r.addConditionalFormatRule.rule);
+    for (const r of rules) {
+      const f = r.booleanRule.condition.values?.[0]?.userEnteredValue ?? '';
+      // 引用符の中（プレースホルダの文言）は参照ではないので外す
+      const bare = f.replace(/"[^"]*"/g, '""');
+      const relative = bare.match(/(?<![$A-Z0-9])[A-Z]{1,2}\d+/g) ?? [];
+      assert.deepEqual(relative, [], `${format} ${teams}チーム: 相対参照 ${relative.join(',')} in ${f}`);
+    }
+  }
+});
+
+test('隠し補助列と列幅がブラケット図の右端まで届く', async () => {
+  // 敗者側は勝者側より右まで伸びる。勝者側だけで右端を決めると、
+  // 右側の列に幅が当たらず、隠し補助列が敗者側のセルの上に来て表示が消える
+  // （実シートで「裏⑦の勝者」が非表示列に埋まっていた）。
+  const { layoutBracketSheet } = await import('../core/layout.js');
+  const { buildSpreadsheetPayload } = await import('../core/payload.js');
+  for (const [format, teams] of [['double-elimination', 6], ['double-elimination', 10], ['double-elimination', 14], ['double-elimination', 20], ['single-elimination', 16]]) {
+    const t = buildTournament({ format, teams, courts: 2, scoring: 'win-loss' });
+    const g = layoutBracketSheet(t);
+    const hidden = buildSpreadsheetPayload(t)
+      .requests.filter((r) => r.updateDimensionProperties?.properties?.hiddenByUser
+        && r.updateDimensionProperties.range.sheetId === 0)
+      .map((r) => r.updateDimensionProperties.range.startIndex + 1);
+    const shown = [...g.cells.values()].filter((c) => !c.style?.helper);
+    const buried = shown.filter((c) => hidden.includes(c.col));
+    assert.deepEqual(
+      buried.map((c) => `${c.row},${c.col}`), [],
+      `${format} ${teams}チーム: 非表示列に表示セルがある`
+    );
+    const noWidth = [...new Set(shown.filter((c) => c.col >= 2).map((c) => c.col))]
+      .filter((c) => !g.columns.has(c));
+    assert.deepEqual(noWidth, [], `${format} ${teams}チーム: 幅未設定の列 ${noWidth.join(',')}`);
+  }
+});
+
+test('決勝トーナメントのシード出場枠にも着色ルールが付く', async () => {
+  // 予選リーグの出場者は groupRank 型。シードで直行する枠は親が「同じ出場者の通過」に
+  // なるため、親から次戦を引けず着色ルールが出ていなかった（team 型と同じ穴）。
+  const { layoutBracketSheet } = await import('../core/layout.js');
+  for (const teams of [10, 12, 13, 16, 20]) {
+    const g = layoutBracketSheet(buildTournament({ format: 'group-stage', teams, courts: 2, scoring: 'sets-of-3' }));
+    const dark = [...g.cells.values()].filter(
+      (c) => ['team', 'slot'].includes(c.style?.role)
+        && /"[A-Z]組\d位"/.test(String(c.value))
+        && !c.style.winnerOf && !c.style.championOf
+    );
+    assert.equal(dark.length, 0, `${teams}チーム: 着色ルールの無い出場枠 ${dark.map((c) => `${c.row},${c.col}`).join(' ')}`);
+  }
+});
+
+test('経路の塗りが起点から途切れず続く', async () => {
+  // 同じ起点を条件にする塗りは、起点の列から右へ連続していなければ帯が切れる。
+  const { layoutBracketSheet } = await import('../core/layout.js');
+  for (const [format, teams] of [['group-stage', 12], ['group-stage', 13], ['double-elimination', 10], ['single-elimination', 10], ['double-elimination', 20]]) {
+    const g = layoutBracketSheet(buildTournament({ format, teams, courts: 2, scoring: 'sets-of-3' }));
+    const byRef = new Map();
+    for (const p of g.paths ?? []) {
+      if (!byRef.has(p.cellRef)) byRef.set(p.cellRef, new Set());
+      byRef.get(p.cellRef).add(p.col);
+    }
+    for (const [ref, cols] of byRef) {
+      const m = String(ref).replace(/\$/g, '').match(/^([A-Z]+)(\d+)$/);
+      let sc = 0;
+      for (const ch of m[1]) sc = sc * 26 + ch.charCodeAt(0) - 64;
+      const all = [sc, ...cols].sort((a, b) => a - b);
+      const gaps = all.filter((c, i) => i > 0 && c !== all[i - 1] + 1);
+      assert.deepEqual(gaps, [], `${format} ${teams}チーム: 起点${ref} 列${all.join(',')} に隙間`);
     }
   }
 });

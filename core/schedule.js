@@ -30,6 +30,30 @@ export function dependenciesOf(match, allMatches) {
   return out;
 }
 
+/**
+ * 割当時点で誰が出るか分かっている出場者。
+ *
+ * 勝者/敗者の参照は結果次第なので分からないが、その試合は依存関係で必ず
+ * 別の枠へ回るため、同じ枠での重複は起きない。
+ * 一方で予選の総当たりは、同じチームの試合どうしに依存関係が無い。
+ * ここを見ないと「1チームが同時刻に2コート」という割当が通ってしまう。
+ */
+function knownPlayers(match) {
+  const out = [];
+  for (const ref of [match.left, match.right]) {
+    if (ref?.type === 'team') out.push(`T${ref.index}`);
+    else if (ref?.type === 'groupRank') out.push(`G${ref.group}-${ref.rank}`);
+  }
+  return out;
+}
+
+/** 同じ枠に入れられるか。出場者が1人でも重なったら不可。 */
+function fits(match, taken) {
+  return knownPlayers(match).every((p) => !taken.has(p));
+}
+
+const claim = (match, taken) => knownPlayers(match).forEach((p) => taken.add(p));
+
 /** 依存関係のみを見る。準備できた試合を出現順にコート数ぶんずつ束ねる。 */
 export function dependencyOnly(matches, { courts }) {
   const placed = new Set();
@@ -40,8 +64,12 @@ export function dependencyOnly(matches, { courts }) {
 
   while (remaining.length > 0) {
     const batch = [];
+    const taken = new Set();
     for (let i = 0; i < remaining.length && batch.length < courts; i++) {
-      if (ready(remaining[i])) batch.push(remaining[i]);
+      const m = remaining[i];
+      if (!ready(m) || !fits(m, taken)) continue;
+      batch.push(m);
+      claim(m, taken);
     }
     if (batch.length === 0) {
       throw new Error('枠割当が進みません。試合の依存関係が循環しています。');
@@ -81,9 +109,12 @@ function greedy(matches, courts, minGap) {
     const k = slots.length;
     const pick = (need) => {
       const batch = [];
+      const taken = new Set();
       for (const m of remaining) {
         if (batch.length >= courts) break;
-        if (gapOf(m, k) >= need) batch.push(m);
+        if (gapOf(m, k) < need || !fits(m, taken)) continue;
+        batch.push(m);
+        claim(m, taken);
       }
       return batch;
     };

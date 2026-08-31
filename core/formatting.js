@@ -28,6 +28,16 @@ function colName(n) {
   return s;
 }
 
+/**
+ * A1参照を絶対参照へ。
+ *
+ * 条件付き書式の式は範囲の左上を基準に、行ごと・列ごとにずれて評価される。
+ * 経路は範囲のどの行でも「同じ1セルが勝者と一致するか」を見たいので、
+ * 相対参照のままだと先頭行しか塗られず、帯が1セルで途切れる（実シートで発覚）。
+ */
+const absolute = (ref) =>
+  String(ref).replace(/\$/g, '').replace(/^([A-Z]+)(\d+)$/, '$$$1$$$2');
+
 const oneCell = (sheetId, row, col) => ({
   sheetId,
   startRowIndex: row - 1, endRowIndex: row,
@@ -80,7 +90,7 @@ export function buildConditionalFormatRules(tournament, grids, sheetIds) {
           startRowIndex: p.r1 - 1, endRowIndex: p.r2,
           startColumnIndex: p.col - 1, endColumnIndex: p.col,
         }],
-        customFormula(`=AND(${w}<>"",${p.cellRef}=${w})`),
+        customFormula(`=AND(${w}<>"",${absolute(p.cellRef)}=${w})`),
         PATH_FORMAT
       )
     );

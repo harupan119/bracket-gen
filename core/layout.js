@@ -48,8 +48,20 @@ export function bracketHeight(entrants) {
 export const helperRow = (matchIndex) => matchIndex + 2;
 
 /** ブラケット図の右端の列。ツリーが無い形式（完全順位決定）は既定の6列構成。 */
+/**
+ * ブラケット図が使う一番右の列。
+ *
+ * 敗者側は勝者側より多くのラウンドを持つことがあり、勝者側だけで判断すると
+ * 右側の列に幅が当たらず、隠し補助列を敗者側のセルの上に置いてしまう
+ * （実シートで「裏⑦の勝者」が非表示列に埋まって消えていた）。
+ */
 export function lastBracketCol(tournament) {
-  return tournament.tree ? 2 + 2 * (tournament.tree.levels.length - 1) : 6;
+  const cols = [6];
+  if (tournament.tree) cols.push(2 + 2 * (tournament.tree.levels.length - 1));
+  if (tournament.loserTree?.levels?.length) {
+    cols.push(2 + 2 * (tournament.loserTree.levels.length - 1));
+  }
+  return Math.max(...cols);
 }
 
 /** 補助列はブラケットの右端より外に置く。図の列数はチーム数で変わるので固定できない。 */
@@ -152,11 +164,14 @@ export function layoutBracketSheet(tournament) {
     row += 1;
     const base = row;
     const semiLabels = group.semis.map((x) => x.label).join('・');
+    // ラウンド名から括弧書きを落とす。「■ 1〜4位 ブラケット（上山）」がすぐ上にあり
+    // 二重に書くと 150px の列に収まらず、右隣も見出しなので文字が切れる。
+    const shortRound = (name) => name.replace(/（[^）]*）/g, '');
     g.set(base, 2, '進出チーム', { role: 'tableHeader' })
       .set(base, 3, '', { role: 'tableHeader' })
-      .set(base, 4, `${group.semis[0].roundName} ${semiLabels} の勝者`, { role: 'tableHeader' })
+      .set(base, 4, `${shortRound(group.semis[0].roundName)} ${semiLabels} の勝者`, { role: 'tableHeader' })
       .set(base, 5, '', { role: 'tableHeader' })
-      .set(base, 6, `${group.final.roundName} ${group.final.label}`, { role: 'tableHeader' });
+      .set(base, 6, `${shortRound(group.final.roundName)} ${group.final.label}`, { role: 'tableHeader' });
     for (let i = 0; i < group.entrants.length; i++) {
       const { row: r, col: c } = bracketCell(base, 0, i);
       // このチームが進む先は、自分が入る準決勝
@@ -330,6 +345,24 @@ function nextMatchOf(tournament, ref, parentRef) {
   if (ref && ref.type === 'winner') {
     return tournament.matches.find((m) => m.id === ref.match)?.winnerTo ?? null;
   }
+  // 敗者側の入口。親が試合として引けない位置に来ることがあるので、模型の行き先を使う。
+  if (ref && ref.type === 'loser') {
+    return tournament.matches.find((m) => m.id === ref.match)?.loserTo ?? null;
+  }
+  // シードは次のラウンドの枠が「同じ出場者の通過」なので、親を見ても試合が分からない。
+  // 親が試合でないときは、その出場者が実際に出る試合を模型から引く。
+  // ここを null で返していたため、シードだけ着色ルールが1本も出ていなかった。
+  // 予選リーグの決勝トーナメントは出場者が groupRank 型なので、team と同じ扱いが要る。
+  const same = (a, b) => {
+    if (!a || !b || a.type !== b.type) return false;
+    if (a.type === 'team') return a.index === b.index;
+    if (a.type === 'groupRank') return a.group === b.group && a.rank === b.rank;
+    return false;
+  };
+  if (ref && (ref.type === 'team' || ref.type === 'groupRank')) {
+    const m = tournament.matches.find((x) => same(x.left, ref) || same(x.right, ref));
+    return m?.id ?? null;
+  }
   return null;
 }
 
@@ -362,25 +395,42 @@ function renderTree(g, tournament, startRow, inBracket) {
     (j, i) => Boolean(levels[j] && levels[j][i])
   );
 
+  // どのセルがそのスロットのチームを表示しているか。
+  // 通過スロットは箱を描かないので、帯を塗る条件を子スロットから引き継ぐ必要がある。
+  const shownAt = new Map();
+
   levels.forEach((level, j) => {
     level.forEach((ref, i) => {
       if (!ref) return; // 空きスロット。シードは直線で示すので、ここには何も置かない。
-      // 2列目以降で試合を経ていない枠は、シードがそのまま通過しただけ。
-      // ここに箱を描くと同じチーム名が2度並ぶので、枝線だけで通過を示す。
-      if (j > 0 && ref.type !== 'winner') return;
       const { row: slotRow, col: c } = bracketCell(base, j, i);
       const up = levels[j + 1] ? bracketCell(base, j + 1, Math.floor(i / 2)) : null;
+      // このスロットの勝ち上がり先は、ひとつ上のラウンドの対応スロット
+      const parent = levels[j + 1] ? levels[j + 1][Math.floor(i / 2)] : null;
+      const next = nextMatchOf(tournament, ref, parent);
+
+      // 2列目以降で試合を経ていない枠は、シードがそのまま通過しただけ。
+      // ここに箱を描くと同じチーム名が2度並ぶ。ただし塗りを飛ばすと帯がここで切れる。
+      if (j > 0 && ref.type !== 'winner') {
+        const from = [i * 2, i * 2 + 1]
+          .map((k) => shownAt.get(`${j - 1},${k}`))
+          .find(Boolean);
+        shownAt.set(`${j},${i}`, from);
+        if (from && next && up) {
+          g.path(slotRow, slotRow, c, from, next); // 箱の無い枠自体
+          g.path(slotRow, up.row, c + 1, from, next); // その先の連結列
+        }
+        return;
+      }
+
       // 対戦相手がいないスロットはシード。枠を次ラウンドの高さへ移し、そこから真横に線を引く。
       // 自分の行に置いたままだと、線が親の行まで折れて試合があるように見える。
       const seeded = up && !level[i % 2 === 0 ? i + 1 : i - 1];
       const r = seeded ? up.row : slotRow;
-      // このスロットの勝ち上がり先は、ひとつ上のラウンドの対応スロット
-      const parent = levels[j + 1] ? levels[j + 1][Math.floor(i / 2)] : null;
       const style = { role: j === 0 ? 'team' : 'slot' };
-      const next = nextMatchOf(tournament, ref, parent);
       if (next) style.winnerOf = next;
       else if (ref.type === 'winner') style.championOf = ref.match;
       g.set(r, c, liveRefFormula(tournament, ref), style);
+      shownAt.set(`${j},${i}`, a1(r, c));
       // シード印はチーム名の左隣へ。名前の文字列に足すと、勝ち上がりの条件付き書式が
       // 「表示中の文字列＝勝者セル」で比較しているため一致しなくなる。
       if (seeded && j === 0) g.set(r, c - 1, '★', { role: 'seed' });

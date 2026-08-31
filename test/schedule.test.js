@@ -89,3 +89,34 @@ test('コート数が多いほど連戦は避けにくい（構造上のトレ�
   const tight = (t) => countBackToBack(t.matches, t.slots.map((s) => s.matches.map((x) => t.matches.find((m) => m.id === x.matchId))));
   assert.ok(tight(t1) < tight(t4), 'コートが多い方が連戦が少ないのは不自然');
 });
+
+test('同じ枠に同じチームの試合が2つ入らない', () => {
+  // 予選の総当たりは、同じチームの試合どうしに依存関係が無い。
+  // 依存だけを見る割当だと「1チームが同時刻に2コート」が通ってしまう
+  // （予選リーグ6〜7チームで実際に発生していた）。
+  for (const format of ['group-stage', 'single-elimination', 'double-elimination', 'full-placement']) {
+    for (let teams = 4; teams <= 20; teams++) {
+      for (const courts of [1, 2, 3, 4]) {
+        let t;
+        try {
+          t = buildTournament({ format, teams, courts, scoring: 'win-loss' });
+        } catch {
+          continue;
+        }
+        for (const slot of t.slots) {
+          const seen = new Set();
+          for (const entry of slot.matches) {
+            const m = t.matches.find((x) => x.id === entry.matchId);
+            for (const ref of [m.left, m.right]) {
+              const key = ref?.type === 'team' ? `T${ref.index}`
+                : ref?.type === 'groupRank' ? `G${ref.group}-${ref.rank}` : null;
+              if (!key) continue;
+              assert.ok(!seen.has(key), `${format} ${teams}人 コート${courts} ${slot.label}: ${key} が2試合`);
+              seen.add(key);
+            }
+          }
+        }
+      }
+    }
+  }
+});
