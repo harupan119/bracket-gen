@@ -36,15 +36,23 @@ export const ROLES = {
   note:        { size: 'note',    color: 'muted' },
   section:     { size: 'section', bold: true, color: 'accent', fill: 'sectionFill' },
   tableHeader: { size: 'header',  bold: true, color: 'white', fill: 'headerFill', box: true, align: 'CENTER' },
-  team:        { size: 'body',    bold: true, fill: 'teamFill', box: true, align: 'CENTER' },
-  slot:        { size: 'body',    box: true, align: 'CENTER' },
+  // wrap: 長いチーム名を枠の中で折り返す。既定の OVERFLOW_CELL のままだと、
+  // 実名が列幅（150px ＝ 全角10文字ぶん）を超えたとき、隣の連結列へ文字が溢れて
+  // ブラケットの罫線の上に重なる。CLIP だと名前が切れてどのチームか分からなくなる。
+  team:        { size: 'body',    bold: true, fill: 'teamFill', box: true, align: 'CENTER', wrap: true },
+  slot:        { size: 'body',    box: true, align: 'CENTER', wrap: true },
   // TEXT書式は必須。無いと "2-1" が日付として解釈され、勝敗判定の文字列比較が黙って外れる。
-  input:       { size: 'body',    bold: true, fill: 'inputFill', box: true, align: 'CENTER', text: true },
+  input:       { size: 'body',    bold: true, fill: 'inputFill', box: true, align: 'CENTER', text: true, wrap: true },
   body:        { size: 'body',    box: true },
   label:       { size: 'body',    bold: true, box: true, align: 'CENTER' },
   // 平常時は白。同着が起きたときだけ条件付き書式で黄色くする。
   // 常時黄色だと「入力必須」に見えてしまう。
   optional:    { size: 'body',    bold: true, box: true, align: 'CENTER', text: true },
+  // 試合番号。連結列のひとつ左に右寄せで置き、線と勝者の箱へ視線をつなぐ。
+  // 箱の役割ではないので地色も枠線も付けない。字は実物と同じ 11pt 太字のアクセント色。
+  // 9pt のグレーにしていたときは、離れて見ると番号だけ沈んで読めなかった。
+  matchNo:     { size: 'body',    bold: true, color: 'accent', align: 'RIGHT' },
   // シード印。チーム名の文字列に足すと勝ち上がり判定の文字列比較が外れるので、左隣に置く。
-  seed:        { size: 'body',    bold: true, color: 'accent', align: 'CENTER' },
+  // 中央寄せだと 67px の列の真ん中に浮き、どの箱に付いた印か離れて見ると分からない。
+  seed:        { size: 'body',    bold: true, color: 'accent', align: 'RIGHT' },
 };

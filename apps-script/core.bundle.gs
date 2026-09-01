@@ -55,6 +55,21 @@ var BracketGen = (() => {
     }
     return order;
   }
+  var COL_UNIT_PX = 7.5;
+  function textPx(text, sizePt) {
+    const em = sizePt * (4 / 3);
+    let w = 0;
+    for (const ch of String(text != null ? text : "")) w += /[\x20-\x7E]/.test(ch) ? em * 0.55 : em;
+    return w;
+  }
+  function colUnits(px) {
+    return Math.ceil(px / COL_UNIT_PX);
+  }
+  var CELL_PAD_PX = 10;
+  var BOX_COL_UNITS = 20;
+  function fullWidthFit(sizePt, units = BOX_COL_UNITS) {
+    return Math.floor(units * COL_UNIT_PX / textPx("\u3042", sizePt));
+  }
 
   // core/validate.js
   var MIN_TEAMS = 4;
@@ -190,7 +205,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
   var BYE = { type: "bye" };
   var isBye = (r) => r.type === "bye";
   function buildDoubleElimination({ teams, bracketReset = true }) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c;
     validateTeams(teams);
     if (teams < 4) throw new Error(`\u30C0\u30D6\u30EB\u30A8\u30EA\u30DF\u30CD\u30FC\u30B7\u30E7\u30F3\u306F4\u30C1\u30FC\u30E0\u4EE5\u4E0A\u3067\u4F7F\u3063\u3066\u304F\u3060\u3055\u3044: ${teams}`);
     const size = 2 ** Math.ceil(Math.log2(teams));
@@ -236,16 +251,19 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       lr += 1;
       pool = minor;
       lbLevels.push({ refs: pool.slice(), kind: "minor" });
-      const drop = wbLosers[r];
+      const drops = pool.map((_, i) => {
+        var _a2;
+        return (_a2 = wbLosers[r][i]) != null ? _a2 : BYE;
+      });
       const major = [];
       for (let i = 0; i < pool.length; i++) {
-        major.push(play(pool[i], (_c = drop[i]) != null ? _c : BYE, { bracket: "L", roundNo: lr }).win);
+        major.push(play(pool[i], drops[i], { bracket: "L", roundNo: lr }).win);
       }
       lr += 1;
       pool = major;
-      lbLevels.push({ refs: pool.slice(), kind: "major" });
+      lbLevels.push({ refs: pool.slice(), kind: "major", drops });
     }
-    const lbChampion = (_d = pool[0]) != null ? _d : BYE;
+    const lbChampion = (_c = pool[0]) != null ? _c : BYE;
     const grand = play(wbChampion, lbChampion, { bracket: "F", roundNo: 1 });
     const grandMatch = raw[raw.length - 1];
     let resetMatch = null;
@@ -316,7 +334,8 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         title: "\u6557\u8005\u5074\u30D6\u30E9\u30B1\u30C3\u30C8",
         levels: lbLevels.map((lv) => ({
           kind: lv.kind,
-          refs: lv.refs.map((r) => isBye(r) ? null : resolve(r))
+          refs: lv.refs.map((r) => isBye(r) ? null : resolve(r)),
+          ...lv.drops ? { drops: lv.drops.map((r) => isBye(r) ? null : resolve(r)) } : {}
         }))
       },
       teamLabels: Array.from({ length: teams }, (_, i) => teamLabel(i)),
@@ -1028,6 +1047,65 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     return s;
   }
 
+  // core/theme.js
+  var THEME = {
+    font: "Hiragino Sans",
+    colors: {
+      grid: "#9CA3AF",
+      // 細い格子罫線
+      line: "#202124",
+      // ブラケットの枝線（格子より濃くして経路を目立たせる）
+      accent: "#1F4E79",
+      // 見出しの文字・強調罫線
+      headerFill: "#4472C4",
+      // 表ヘッダの帯
+      headerText: "#FFFFFF",
+      sectionFill: "#DCE6F1",
+      // セクション見出しの地
+      teamFill: "#DEEBF7",
+      // チーム名セルの地
+      inputFill: "#FFF2CC",
+      // 入力欄（黄）
+      doneFill: "#E2F0D9",
+      // 入力済み（緑）
+      muted: "#6B7280",
+      // 補足テキスト
+      text: "#000000",
+      white: "#FFFFFF"
+    },
+    sizes: { title: 14, section: 12, body: 11, header: 10, note: 9 }
+  };
+  function toRgb(hex) {
+    const h = hex.replace("#", "");
+    const at = (i) => Math.round(parseInt(h.slice(i, i + 2), 16) / 255 * 1e4) / 1e4;
+    return { red: at(0), green: at(2), blue: at(4) };
+  }
+  var ROLES = {
+    title: { size: "title", bold: true },
+    note: { size: "note", color: "muted" },
+    section: { size: "section", bold: true, color: "accent", fill: "sectionFill" },
+    tableHeader: { size: "header", bold: true, color: "white", fill: "headerFill", box: true, align: "CENTER" },
+    // wrap: 長いチーム名を枠の中で折り返す。既定の OVERFLOW_CELL のままだと、
+    // 実名が列幅（150px ＝ 全角10文字ぶん）を超えたとき、隣の連結列へ文字が溢れて
+    // ブラケットの罫線の上に重なる。CLIP だと名前が切れてどのチームか分からなくなる。
+    team: { size: "body", bold: true, fill: "teamFill", box: true, align: "CENTER", wrap: true },
+    slot: { size: "body", box: true, align: "CENTER", wrap: true },
+    // TEXT書式は必須。無いと "2-1" が日付として解釈され、勝敗判定の文字列比較が黙って外れる。
+    input: { size: "body", bold: true, fill: "inputFill", box: true, align: "CENTER", text: true, wrap: true },
+    body: { size: "body", box: true },
+    label: { size: "body", bold: true, box: true, align: "CENTER" },
+    // 平常時は白。同着が起きたときだけ条件付き書式で黄色くする。
+    // 常時黄色だと「入力必須」に見えてしまう。
+    optional: { size: "body", bold: true, box: true, align: "CENTER", text: true },
+    // 試合番号。連結列のひとつ左に右寄せで置き、線と勝者の箱へ視線をつなぐ。
+    // 箱の役割ではないので地色も枠線も付けない。字は実物と同じ 11pt 太字のアクセント色。
+    // 9pt のグレーにしていたときは、離れて見ると番号だけ沈んで読めなかった。
+    matchNo: { size: "body", bold: true, color: "accent", align: "RIGHT" },
+    // シード印。チーム名の文字列に足すと勝ち上がり判定の文字列比較が外れるので、左隣に置く。
+    // 中央寄せだと 67px の列の真ん中に浮き、どの箱に付いた印か離れて見ると分からない。
+    seed: { size: "body", bold: true, color: "accent", align: "RIGHT" }
+  };
+
   // core/sheets.js
   var TABS = {
     bracket: "\u30C8\u30FC\u30CA\u30E1\u30F3\u30C8\u8868",
@@ -1045,17 +1123,22 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     const col2 = kind === "winner" ? "E" : "F";
     return `'${TABS.control}'!$${col2}$${cellRefs.controlRow(matchIndex(tournament, matchId))}`;
   }
+  function refPlaceholder(ref) {
+    if (ref.type === "team") return `\uFF08${ref.label}\u30C1\u30FC\u30E0\uFF09`;
+    if (ref.type === "groupRank") return ref.label;
+    return `${ref.matchLabel}\u306E${ref.type === "winner" ? "\u52DD\u8005" : "\u6557\u8005"}`;
+  }
   function liveRefFormula(tournament, ref) {
+    const placeholder = refPlaceholder(ref);
     if (ref.type === "team") {
       const c = cellRefs.teamName(ref.index);
-      return `=IF(${c}="","\uFF08${ref.label}\u30C1\u30FC\u30E0\uFF09",${c})`;
+      return `=IF(${c}="","${placeholder}",${c})`;
     }
     if (ref.type === "groupRank") {
       const f = groupRankFormula(tournament, ref.group, ref.rank);
-      return `=IF(${f}="","${ref.label}",${f})`;
+      return `=IF(${f}="","${placeholder}",${f})`;
     }
     const cell = controlCell(tournament, ref.match, ref.type);
-    const placeholder = `${ref.matchLabel}\u306E${ref.type === "winner" ? "\u52DD\u8005" : "\u6557\u8005"}`;
     return `=IF(${cell}="","${placeholder}",${cell})`;
   }
   function layoutControlSheet(tournament) {
@@ -1096,7 +1179,12 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     const g = new Grid(TABS.mobile);
     g.frozenRows = MOBILE_ROW - 1;
     const sc = getScoring(tournament.scoring);
-    g.setColumnWidth(1, 8).setColumnWidth(2, 22).setColumnWidth(3, 12).setColumnWidth(4, 14);
+    const cardPx = Math.max(
+      ...tournament.matches.map(
+        (m) => textPx(`${refPlaceholder(m.left)} vs ${refPlaceholder(m.right)}`, THEME.sizes.body)
+      )
+    );
+    g.setColumnWidth(1, 8).setColumnWidth(2, Math.max(22, colUnits(cardPx + CELL_PAD_PX))).setColumnWidth(3, 12).setColumnWidth(4, 14);
     g.set(1, 1, tournament.title || "\u7D50\u679C\u5165\u529B", { role: "title" });
     g.set(2, 1, `\u9EC4\u8272\u3044\u30BB\u30EB\u306B\u7D50\u679C\uFF08${sc.options.join(" / ")}\uFF09\u3092\u5165\u308C\u308B\u3068\u3001\u5168\u30BF\u30D6\u306E\u52DD\u8005\u30FB\u6B21\u6226\u30FB\u8272\u304C\u81EA\u52D5\u3067\u66F4\u65B0\u3055\u308C\u307E\u3059\u3002`, { role: "note" });
     ["\u8A66\u5408", "\u5BFE\u6226", "\u7D50\u679C", "\u52DD\u8005"].forEach((h, i) => g.set(4, i + 1, h, { role: "tableHeader" }));
@@ -1149,6 +1237,12 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       g.set(TEAM_INPUT_ROW + i, 1, label, { role: "label" });
       g.set(TEAM_INPUT_ROW + i, 2, "", { role: "input", input: true });
     });
+    g.set(
+      TEAM_INPUT_ROW + tournament.teams,
+      1,
+      `\u203B \u5168\u89D2${fullWidthFit(THEME.sizes.body)}\u6587\u5B57\u3092\u8D85\u3048\u308B\u3068\u3001\u30D6\u30E9\u30B1\u30C3\u30C8\u306E\u67A0\u306E\u4E2D\u3067\u6298\u308A\u8FD4\u3057\u307E\u3059`,
+      { role: "note" }
+    );
     let row = TEAM_INPUT_ROW + tournament.teams + 1;
     g.set(row, 1, `\u25A0 \u9032\u884C\u9806\uFF08\u67A0\u306E\u4E2D\u306E\u8A66\u5408\u306F\u540C\u6642\u306B\u9032\u884C\u3002\u67A0\u304C\u7D42\u308F\u3063\u305F\u3089\u6B21\u306E\u67A0\u3078\uFF09${tournament.avoidBackToBack ? "\u3000\u203B\u9023\u6226\u3092\u306A\u308B\u3079\u304F\u907F\u3051\u3066\u4E26\u3079\u3066\u3044\u307E\u3059" : ""}`, { role: "section" });
     g.merge(row, 1, row, 6);
@@ -1175,18 +1269,18 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
   var COLUMNS = [
     { col: 1, width: 9 },
     // A: 試合番号（決勝R のような3文字ラベルまで収める）
-    { col: 2, width: 20 },
+    { col: 2, width: BOX_COL_UNITS },
     // B: 左チーム / ブラケット第1列
     { col: 3, width: 4 },
     // C: vs / 連結線（実物と同じ30px。ここを塗って経路の帯にする）
-    { col: 4, width: 20 },
+    { col: 4, width: BOX_COL_UNITS },
     // D: 右チーム / ブラケット第2列
     { col: 5, width: 4 },
     // E: 連結線
     // F は下の表の「行き先」「決定方法」にも使うが、幅はブラケットの箱に合わせる。
     // ここだけ広くすると、ブラケットの3ラウンド目の箱だけが横に伸び、
     // 経路を塗ったときに1箇所だけ赤い板になる。表側は 5〜6列の結合で幅を確保する。
-    { col: 6, width: 20 }
+    { col: 6, width: BOX_COL_UNITS }
     // F: 説明 / ブラケット第3列
   ];
   function bracketCell(base, round, index) {
@@ -1203,9 +1297,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     var _a, _b;
     const cols = [6];
     if (tournament.tree) cols.push(2 + 2 * (tournament.tree.levels.length - 1));
-    if ((_b = (_a = tournament.loserTree) == null ? void 0 : _a.levels) == null ? void 0 : _b.length) {
-      cols.push(2 + 2 * (tournament.loserTree.levels.length - 1));
-    }
+    if ((_b = (_a = tournament.loserTree) == null ? void 0 : _a.levels) == null ? void 0 : _b.length) cols.push(loserBracketCol(tournament));
     return Math.max(...cols);
   }
   function helperCols(tournament) {
@@ -1228,7 +1320,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       g.set(helperRow(i), hc.loser, `=${controlCell(tournament, m.id, "loser")}`, { helper: true });
     });
     for (let c = 7; c <= lastBracketCol(tournament); c++) {
-      g.setColumnWidth(c, c % 2 === 0 ? 20 : 4);
+      g.setColumnWidth(c, c % 2 === 0 ? BOX_COL_UNITS : 4);
     }
     let row = 1;
     g.set(row, 1, tournament.title || `\u30C8\u30FC\u30CA\u30E1\u30F3\u30C8\u8868\uFF08${tournament.teams}\u30C1\u30FC\u30E0\u30FB\u5168${tournament.matches.length}\u8A66\u5408\uFF09`, { role: "title" });
@@ -1301,6 +1393,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       for (let i = 0; i < group.semis.length; i++) {
         const { row: r, col: c } = bracketCell(base, 1, i);
         g.set(r, c, liveRefFormula(tournament, { type: "winner", match: group.semis[i].id, matchLabel: group.semis[i].label }), {
+          role: "slot",
           winnerOf: group.final.id
         });
       }
@@ -1488,6 +1581,12 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         g.set(r, c, liveRefFormula(tournament, ref), style);
         shownAt.set(`${j},${i}`, a1(r, c));
         if (seeded && j === 0) g.set(r, c - 1, "\u2605", { role: "seed" });
+        if (ref.type === "winner") {
+          const m = tournament.matches.find((x) => x.id === ref.match);
+          if (m && c - 2 >= 1 && !g.cells.has(`${r},${c - 2}`)) {
+            g.set(r, c - 2, m.label, { role: "matchNo" });
+          }
+        }
         if (ref.type === "winner") inBracket.add(ref.match);
         if (style.winnerOf && up) {
           g.path(r, up.row, c + 1, a1(r, c), style.winnerOf);
@@ -1496,60 +1595,98 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     });
     return base + bracketHeight(levels[0].length) + 1;
   }
+  var LOSER_ROW_STEP = 4;
+  function loserTreeNodes(levels) {
+    var _a, _b, _c, _d;
+    let nodes = levels[0].refs.map((ref) => ref ? { kind: "leaf", ref } : null);
+    for (let j = 1; j < levels.length; j++) {
+      const lv = levels[j];
+      const minor = lv.kind === "minor";
+      const next = [];
+      for (let i = 0; i < lv.refs.length; i++) {
+        const a = minor ? nodes[2 * i] : nodes[i];
+        const dropRef = minor ? null : (_b = (_a = lv.drops) == null ? void 0 : _a[i]) != null ? _b : null;
+        const b = minor ? nodes[2 * i + 1] : dropRef ? { kind: "leaf", ref: dropRef } : null;
+        next.push(a && b ? { kind: "match", ref: lv.refs[i], a, b, drop: !minor } : (_c = a != null ? a : b) != null ? _c : null);
+      }
+      nodes = next;
+    }
+    return (_d = nodes[0]) != null ? _d : null;
+  }
+  function loserDepth(node) {
+    return node && node.kind === "match" ? Math.max(loserDepth(node.a), loserDepth(node.b)) + 1 : 0;
+  }
+  function loserBracketCol(tournament) {
+    var _a;
+    const levels = (_a = tournament.loserTree) == null ? void 0 : _a.levels;
+    if (!(levels == null ? void 0 : levels.length)) return 0;
+    const root = loserTreeNodes(levels);
+    return root ? 2 + 2 * loserDepth(root) : 0;
+  }
   function renderLoserTree(g, tournament, startRow, inBracket) {
     const { levels, title } = tournament.loserTree;
     if (!levels.length) return startRow;
+    const root = loserTreeNodes(levels);
+    if (!root) return startRow;
     let row = startRow;
     g.set(row, 1, `\u25A0 ${title}`, { role: "section" });
     g.merge(row, 1, row, 6);
     row += 1;
     const base = row;
-    let rows = levels[0].refs.map((_, i) => base + 2 * i + 1);
-    const placed = [{ rows, level: levels[0], col: 2 }];
-    for (let j = 1; j < levels.length; j++) {
-      if (levels[j].kind === "minor") {
-        const next = [];
-        for (let i = 0; i < levels[j].refs.length; i++) {
-          next.push(Math.round((rows[i * 2] + rows[i * 2 + 1]) / 2));
-        }
-        rows = next;
+    const entries = [];
+    const merges = [];
+    let cursor = base + 1;
+    const place = (node, col2) => {
+      if (node.kind === "leaf") {
+        const slot = { ref: node.ref, row: cursor, col: col2 };
+        cursor += LOSER_ROW_STEP;
+        entries.push(slot);
+        return slot;
       }
-      placed.push({ rows: rows.slice(), level: levels[j], col: 2 + 2 * j });
+      const a = place(node.a, col2 - 2);
+      let b;
+      if (node.drop) {
+        b = { ref: node.b.ref, row: a.row + LOSER_ROW_STEP, col: col2 - 2 };
+        entries.push(b);
+        cursor = Math.max(cursor, b.row + LOSER_ROW_STEP);
+      } else {
+        b = place(node.b, col2 - 2);
+      }
+      const out = { ref: node.ref, row: Math.round((a.row + b.row) / 2), col: col2 };
+      merges.push({ a, b, out });
+      return out;
+    };
+    const top = place(root, 2 + 2 * loserDepth(root));
+    const boxOf = /* @__PURE__ */ new Map();
+    const draw = (slot, role) => {
+      const style = { role };
+      const next = nextMatchOf(tournament, slot.ref, null);
+      if (next) style.winnerOf = next;
+      else if (slot.ref.type === "winner") style.championOf = slot.ref.match;
+      g.set(slot.row, slot.col, liveRefFormula(tournament, slot.ref), style);
+      if (slot.ref.type === "winner") inBracket.add(slot.ref.match);
+      boxOf.set(slot, a1(slot.row, slot.col));
+    };
+    for (const s of entries) draw(s, "team");
+    for (const m of merges) draw(m.out, "slot");
+    for (const { a, b, out } of merges) {
+      const conn = out.col - 1;
+      const played = out.ref.type === "winner" ? out.ref.match : nextMatchOf(tournament, a.ref, null);
+      for (const side of [a, b]) {
+        g.border(side.row, side.col, side.row, side.col, "bottom");
+        g.path(side.row, out.row, conn, boxOf.get(side), played);
+      }
+      g.border(Math.min(a.row, b.row) + 1, conn, Math.max(a.row, b.row), conn, "left");
+      g.border(out.row, conn, out.row, conn, "bottom");
+      if (out.ref.type === "winner") {
+        const m = tournament.matches.find((x) => x.id === out.ref.match);
+        if (m) g.set(out.row, out.col - 2, m.label, { role: "matchNo" });
+      }
     }
-    placed.forEach((p, j) => {
-      p.level.refs.forEach((ref, i) => {
-        if (!ref) return;
-        if (j > 0 && ref.type !== "winner") return;
-        const parent = placed[j + 1];
-        const parentRef = parent ? parent.level.refs[parent.level.kind === "minor" ? Math.floor(i / 2) : i] : null;
-        const style = { role: j === 0 ? "team" : "slot" };
-        const next2 = nextMatchOf(tournament, ref, parentRef);
-        if (next2) style.winnerOf = next2;
-        else if (ref.type === "winner") style.championOf = ref.match;
-        g.set(p.rows[i], p.col, liveRefFormula(tournament, ref), style);
-        if (ref.type === "winner") inBracket.add(ref.match);
-        if (style.winnerOf && parent) {
-          const idx = parent.level.kind === "minor" ? Math.floor(i / 2) : i;
-          g.path(p.rows[i], parent.rows[idx], p.col + 1, a1(p.rows[i], p.col), style.winnerOf);
-        }
-        g.border(p.rows[i], p.col, p.rows[i], p.col, "bottom");
-        if (j > 0 && p.level.kind === "major") {
-          g.border(p.rows[i], p.col - 1, p.rows[i], p.col - 1, "bottom");
-        }
-      });
-      const next = placed[j + 1];
-      if (next && next.level.kind === "minor") {
-        for (let k = 0; k < next.level.refs.length; k++) {
-          if (!next.level.refs[k]) continue;
-          const top = p.rows[k * 2];
-          const bottom = p.rows[k * 2 + 1];
-          const conn = p.col + 1;
-          g.border(top + 1, conn, bottom, conn, "left");
-          g.border(next.rows[k], conn, next.rows[k], conn, "bottom");
-        }
-      }
-    });
-    return base + levels[0].refs.length * 2 + 1;
+    g.border(top.row, top.col, top.row, top.col, "bottom");
+    let bottom = base;
+    for (const s of [...entries, ...merges.map((m) => m.out)]) bottom = Math.max(bottom, s.row + 1);
+    return bottom + 1;
   }
   function renderGroupStandings(g, tournament, startRow) {
     const blocks = standingsLayout(tournament);
@@ -1565,7 +1702,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       g.cells.get(`${row},2`).value = "\u30C1\u30FC\u30E0\u540D";
       g.cells.get(`${row},3`).value = "\u52DD";
       g.cells.get(`${row},4`).value = "\u30BB\u30C3\u30C8";
-      g.cells.get(`${row},5`).value = "\u76F4\u5BFE";
+      g.cells.get(`${row},5`).value = "\u76F4";
       g.cells.get(`${row},6`).value = "\u3058\u3083\u3093\u3051\u3093";
       row += 1;
       const bandTop = row;
@@ -1583,61 +1720,10 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       g.advances.push({ r1: bandTop, r2: row - 1, c1: 1, c2: 5, rankCol: 1, cutoff: group.advance });
       row += 1;
     }
-    g.set(row, 1, "\u203B \u4E0A\u4F4D\u306E\u8272\u4ED8\u304D\u304C\u6C7A\u52DD\u30C8\u30FC\u30CA\u30E1\u30F3\u30C8\u9032\u51FA\u3002\u9806\u4F4D\u306F \u52DD\u6570 \u2192 \u76F4\u63A5\u5BFE\u6C7A \u2192 \u30BB\u30C3\u30C8\u7387 \u306E\u9806\u3067\u6C7A\u3081\u307E\u3059\u3002\u3059\u3079\u3066\u4E26\u3093\u3060\u7D44\u306F\u300C\u3058\u3083\u3093\u3051\u3093\u300D\u6B04\u304C\u9EC4\u8272\u304F\u306A\u308B\u306E\u3067\u3001\u5165\u529B\u7528\u30BF\u30D6\u306E\u4E0B\u90E8\u306B\u3042\u308B\u300C\u3058\u3083\u3093\u3051\u3093\u300D\u6B04\u306B\u3001\u4EE3\u8868\u8005\u306E\u3058\u3083\u3093\u3051\u3093\u3067\u6C7A\u3081\u305F\u9806\u4F4D\uFF081\u304C\u52DD\u3061\uFF09\u3092\u5165\u308C\u3066\u304F\u3060\u3055\u3044\u3002", { role: "note" });
+    g.set(row, 1, "\u203B \u4E0A\u4F4D\u306E\u8272\u4ED8\u304D\u304C\u6C7A\u52DD\u30C8\u30FC\u30CA\u30E1\u30F3\u30C8\u9032\u51FA\u3002\u9806\u4F4D\u306F \u52DD\u6570\uFF08\u52DD\uFF09 \u2192 \u76F4\u63A5\u5BFE\u6C7A\uFF08\u76F4\uFF09 \u2192 \u30BB\u30C3\u30C8\u7387\uFF08\u30BB\u30C3\u30C8\uFF09 \u306E\u9806\u3067\u6C7A\u3081\u307E\u3059\u3002\u3059\u3079\u3066\u4E26\u3093\u3060\u7D44\u306F\u300C\u3058\u3083\u3093\u3051\u3093\u300D\u6B04\u304C\u9EC4\u8272\u304F\u306A\u308B\u306E\u3067\u3001\u5165\u529B\u7528\u30BF\u30D6\u306E\u4E0B\u90E8\u306B\u3042\u308B\u300C\u3058\u3083\u3093\u3051\u3093\u300D\u6B04\u306B\u3001\u4EE3\u8868\u8005\u306E\u3058\u3083\u3093\u3051\u3093\u3067\u6C7A\u3081\u305F\u9806\u4F4D\uFF081\u304C\u52DD\u3061\uFF09\u3092\u5165\u308C\u3066\u304F\u3060\u3055\u3044\u3002", { role: "note" });
     g.merge(row, 1, row, 6);
     return row + 2;
   }
-
-  // core/theme.js
-  var THEME = {
-    font: "Hiragino Sans",
-    colors: {
-      grid: "#9CA3AF",
-      // 細い格子罫線
-      line: "#202124",
-      // ブラケットの枝線（格子より濃くして経路を目立たせる）
-      accent: "#1F4E79",
-      // 見出しの文字・強調罫線
-      headerFill: "#4472C4",
-      // 表ヘッダの帯
-      headerText: "#FFFFFF",
-      sectionFill: "#DCE6F1",
-      // セクション見出しの地
-      teamFill: "#DEEBF7",
-      // チーム名セルの地
-      inputFill: "#FFF2CC",
-      // 入力欄（黄）
-      doneFill: "#E2F0D9",
-      // 入力済み（緑）
-      muted: "#6B7280",
-      // 補足テキスト
-      text: "#000000",
-      white: "#FFFFFF"
-    },
-    sizes: { title: 14, section: 12, body: 11, header: 10, note: 9 }
-  };
-  function toRgb(hex) {
-    const h = hex.replace("#", "");
-    const at = (i) => Math.round(parseInt(h.slice(i, i + 2), 16) / 255 * 1e4) / 1e4;
-    return { red: at(0), green: at(2), blue: at(4) };
-  }
-  var ROLES = {
-    title: { size: "title", bold: true },
-    note: { size: "note", color: "muted" },
-    section: { size: "section", bold: true, color: "accent", fill: "sectionFill" },
-    tableHeader: { size: "header", bold: true, color: "white", fill: "headerFill", box: true, align: "CENTER" },
-    team: { size: "body", bold: true, fill: "teamFill", box: true, align: "CENTER" },
-    slot: { size: "body", box: true, align: "CENTER" },
-    // TEXT書式は必須。無いと "2-1" が日付として解釈され、勝敗判定の文字列比較が黙って外れる。
-    input: { size: "body", bold: true, fill: "inputFill", box: true, align: "CENTER", text: true },
-    body: { size: "body", box: true },
-    label: { size: "body", bold: true, box: true, align: "CENTER" },
-    // 平常時は白。同着が起きたときだけ条件付き書式で黄色くする。
-    // 常時黄色だと「入力必須」に見えてしまう。
-    optional: { size: "body", bold: true, box: true, align: "CENTER", text: true },
-    // シード印。チーム名の文字列に足すと勝ち上がり判定の文字列比較が外れるので、左隣に置く。
-    seed: { size: "body", bold: true, color: "accent", align: "CENTER" }
-  };
 
   // core/palette.js
   var COLORS = {
@@ -1806,7 +1892,8 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
           hidden,
           gridProperties: {
             rowCount: Math.max(grid.maxRow + 5, 20),
-            columnCount: Math.max(grid.maxCol + 2, 8)
+            columnCount: Math.max(grid.maxCol + 2, 8),
+            hideGridlines: true
           }
         }
       }))
@@ -1826,14 +1913,18 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
           }
         });
       }
+      const gridProps = { hideGridlines: true };
+      const gridFields = ["gridProperties.hideGridlines"];
       if (grid.frozenRows) {
-        requests.push({
-          updateSheetProperties: {
-            properties: { sheetId, gridProperties: { frozenRowCount: grid.frozenRows } },
-            fields: "gridProperties.frozenRowCount"
-          }
-        });
+        gridProps.frozenRowCount = grid.frozenRows;
+        gridFields.push("gridProperties.frozenRowCount");
       }
+      requests.push({
+        updateSheetProperties: {
+          properties: { sheetId, gridProperties: gridProps },
+          fields: gridFields.join(",")
+        }
+      });
       for (const b of grid.borders) {
         requests.push({
           updateBorders: {
@@ -1923,13 +2014,15 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       fmt.backgroundColor = toRgb(THEME.colors[(_b = role.fill) != null ? _b : "white"]);
       fmt.horizontalAlignment = (_c = role.align) != null ? _c : "LEFT";
       if (role.text) fmt.numberFormat = { type: "TEXT" };
+      if (role.wrap) fmt.wrapStrategy = "WRAP";
       const fields = [
         "userEnteredFormat.backgroundColor",
         "userEnteredFormat.horizontalAlignment",
         "userEnteredFormat.textFormat.bold",
         "userEnteredFormat.textFormat.fontSize",
         "userEnteredFormat.textFormat.foregroundColor",
-        ...role.text ? ["userEnteredFormat.numberFormat"] : []
+        ...role.text ? ["userEnteredFormat.numberFormat"] : [],
+        ...role.wrap ? ["userEnteredFormat.wrapStrategy"] : []
       ].join(",");
       for (const box of rectangles(cells)) {
         out.push({
