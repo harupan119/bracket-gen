@@ -128,3 +128,50 @@ test('日付に化けうる選択肢を持つプリセットを検出できる',
   assert.ok(getScoring('sets-of-5').options.some(risky), 'sets-of-5 は危険な選択肢を含む');
   assert.ok(!getScoring('win-loss').options.some(risky), 'win-loss は含まない');
 });
+
+
+test('既定の格子線を消す指定が、新規作成と既存タブの両経路に入る', () => {
+  // 罫線は自前で引いているので、既定の格子と二重に見える。テンプレ側だけで消すと
+  // そこから作られていないシートで再発するため、生成のたびに指定する。
+  const p = buildSpreadsheetPayload(make());
+  for (const s of p.create.sheets) {
+    assert.equal(s.properties.gridProperties.hideGridlines, true, `${s.properties.title}: 新規作成で格子が残る`);
+  }
+  const ids = new Set();
+  for (const r of p.requests) {
+    const u = r.updateSheetProperties;
+    if (u?.properties?.gridProperties?.hideGridlines) {
+      assert.match(u.fields, /gridProperties\.hideGridlines/, 'fields に指定が無いと反映されない');
+      ids.add(u.properties.sheetId);
+    }
+  }
+  assert.deepEqual([...ids].sort(), [0, 1, 2, 3], '4タブすべてに格子オフの指定が要る');
+});
+
+test('チーム名が入る枠は折り返す（長い実名が連結列の罫線に溢れない）', async () => {
+  // 箱の列は 150px ＝ 全角10文字ぶん。Sheets の既定は OVERFLOW_CELL なので、
+  // それを超えた実名は隣の連結列へ流れ出し、ブラケットの罫線の上に文字が重なる。
+  // CLIP だと名前が切れてどのチームか分からなくなるため、折り返しを選んでいる。
+  const { layoutBracketSheet } = await import('../core/layout.js');
+  for (const [format, teams] of [['double-elimination', 10], ['single-elimination', 8], ['full-placement', 8]]) {
+    const t = buildTournament({ format, teams, courts: 2, scoring: 'sets-of-3' });
+    const grid = layoutBracketSheet(t);
+    const wrapped = new Set();
+    for (const r of buildSpreadsheetPayload(t).requests) {
+      const rc = r.repeatCell;
+      if (rc?.range.sheetId !== 0) continue;
+      if (rc.cell.userEnteredFormat?.wrapStrategy !== 'WRAP') continue;
+      assert.match(rc.fields, /userEnteredFormat\.wrapStrategy/, 'fields に無いと反映されない');
+      for (let row = rc.range.startRowIndex + 1; row <= rc.range.endRowIndex; row++) {
+        for (let col = rc.range.startColumnIndex + 1; col <= rc.range.endColumnIndex; col++) {
+          wrapped.add(`${row},${col}`);
+        }
+      }
+    }
+    const boxes = [...grid.cells.values()].filter((c) => ['team', 'slot'].includes(c.style?.role));
+    assert.ok(boxes.length > 0, `${format} ${teams}: 箱が無い`);
+    for (const c of boxes) {
+      assert.ok(wrapped.has(`${c.row},${c.col}`), `${format} ${teams}: ${c.row},${c.col} が折り返さない`);
+    }
+  }
+});

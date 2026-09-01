@@ -3,7 +3,8 @@ import { getScoring, validScore } from './scoring.js';
 import { eliminationRule } from './layout.js';
 import { writeStandings, groupRankFormula } from './standings.js';
 import { TEAM_INPUT_ROW, MOBILE_ROW, controlRow, standingsLayout, jankenRow } from './rows.js';
-import { teamLabel } from './util.js';
+import { teamLabel, textPx, colUnits, fullWidthFit, CELL_PAD_PX } from './util.js';
+import { THEME } from './theme.js';
 
 export const TABS = {
   bracket: 'トーナメント表',
@@ -30,18 +31,25 @@ export function controlCell(tournament, matchId, kind) {
  * 表示用セルの数式。未確定なら進み方の目印（「①の勝者」等）を出し、
  * 確定したら実際のチーム名に変わる。
  */
+/** 未確定のときにセルへ出す目印。列幅を決めるときの基準にもなる。 */
+export function refPlaceholder(ref) {
+  if (ref.type === 'team') return `（${ref.label}チーム）`;
+  if (ref.type === 'groupRank') return ref.label;
+  return `${ref.matchLabel}の${ref.type === 'winner' ? '勝者' : '敗者'}`;
+}
+
 export function liveRefFormula(tournament, ref) {
+  const placeholder = refPlaceholder(ref);
   if (ref.type === 'team') {
     const c = cellRefs.teamName(ref.index);
-    return `=IF(${c}="","（${ref.label}チーム）",${c})`;
+    return `=IF(${c}="","${placeholder}",${c})`;
   }
   if (ref.type === 'groupRank') {
     // 予選が終わるまで誰か分からない。順位表から引き、未確定なら組と順位を目印に出す。
     const f = groupRankFormula(tournament, ref.group, ref.rank);
-    return `=IF(${f}="","${ref.label}",${f})`;
+    return `=IF(${f}="","${placeholder}",${f})`;
   }
   const cell = controlCell(tournament, ref.match, ref.type);
-  const placeholder = `${ref.matchLabel}の${ref.type === 'winner' ? '勝者' : '敗者'}`;
   return `=IF(${cell}="","${placeholder}",${cell})`;
 }
 
@@ -94,7 +102,17 @@ export function layoutMobileSheet(tournament) {
   const g = new Grid(TABS.mobile);
   g.frozenRows = MOBILE_ROW - 1; // 見出し行までを固定。スクロールしても列の意味が分かる
   const sc = getScoring(tournament.scoring);
-  g.setColumnWidth(1, 8).setColumnWidth(2, 22).setColumnWidth(3, 12).setColumnWidth(4, 14);
+  // 対戦カードの列は「左の目印 vs 右の目印」が並ぶ。実際に出る文字列から幅を決める。
+  // 22（165px）固定だと「（Hチーム） vs （Iチーム）」（195px）が両端で見切れる。
+  const cardPx = Math.max(
+    ...tournament.matches.map((m) =>
+      textPx(`${refPlaceholder(m.left)} vs ${refPlaceholder(m.right)}`, THEME.sizes.body)
+    )
+  );
+  g.setColumnWidth(1, 8)
+    .setColumnWidth(2, Math.max(22, colUnits(cardPx + CELL_PAD_PX)))
+    .setColumnWidth(3, 12)
+    .setColumnWidth(4, 14);
 
   g.set(1, 1, tournament.title || '結果入力', { role: 'title' });
   g.set(2, 1, `黄色いセルに結果（${sc.options.join(' / ')}）を入れると、全タブの勝者・次戦・色が自動で更新されます。`, { role: 'note' });
@@ -166,6 +184,11 @@ export function layoutProgressSheet(tournament) {
     g.set(TEAM_INPUT_ROW + i, 1, label, { role: 'label' });
     g.set(TEAM_INPUT_ROW + i, 2, '', { role: 'input', input: true });
   });
+
+  // 記入欄のすぐ下の空き行に、名前の長さの目安を出す。見出しに足すと表示幅を200px超える。
+  // 上限は列幅とフォントから出す。数字を直に書くと、どちらかを変えたときに実際の折り返しと食い違う。
+  g.set(TEAM_INPUT_ROW + tournament.teams, 1,
+    `※ 全角${fullWidthFit(THEME.sizes.body)}文字を超えると、ブラケットの枠の中で折り返します`, { role: 'note' });
 
   let row = TEAM_INPUT_ROW + tournament.teams + 1;
   g.set(row, 1, `■ 進行順（枠の中の試合は同時に進行。枠が終わったら次の枠へ）${tournament.avoidBackToBack ? '　※連戦をなるべく避けて並べています' : ''}`, { role: 'section' });

@@ -73,14 +73,16 @@ export function buildDoubleElimination({ teams, bracketReset = true }) {
     pool = minor;
     lbLevels.push({ refs: pool.slice(), kind: 'minor' });
 
-    const drop = wbLosers[r];
+    // 大ラウンドの相手は勝者側から落ちてくる。図ではこの枠が入口として現れるので、
+    // 出力プールだけでなく入力側も残す。ここを捨てると各試合が対戦相手のいない箱になる。
+    const drops = pool.map((_, i) => wbLosers[r][i] ?? BYE);
     const major = [];
     for (let i = 0; i < pool.length; i++) {
-      major.push(play(pool[i], drop[i] ?? BYE, { bracket: 'L', roundNo: lr }).win);
+      major.push(play(pool[i], drops[i], { bracket: 'L', roundNo: lr }).win);
     }
     lr += 1;
     pool = major;
-    lbLevels.push({ refs: pool.slice(), kind: 'major' });
+    lbLevels.push({ refs: pool.slice(), kind: 'major', drops });
   }
   const lbChampion = pool[0] ?? BYE;
 
@@ -166,6 +168,7 @@ export function buildDoubleElimination({ teams, bracketReset = true }) {
       levels: lbLevels.map((lv) => ({
         kind: lv.kind,
         refs: lv.refs.map((r) => (isBye(r) ? null : resolve(r))),
+        ...(lv.drops ? { drops: lv.drops.map((r) => (isBye(r) ? null : resolve(r))) } : {}),
       })),
     },
     teamLabels: Array.from({ length: teams }, (_, i) => teamLabel(i)),

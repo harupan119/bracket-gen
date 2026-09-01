@@ -1,19 +1,20 @@
 import { Grid, a1 } from './grid.js';
 import { liveRefFormula, controlCell } from './sheets.js';
 import { standingsLayout } from './standings.js';
+import { BOX_COL_UNITS } from './util.js';
 import { TABS } from './sheets.js';
 
 // 実物 8team_volleyball_base.xlsx と同じ列構成
 export const COLUMNS = [
   { col: 1, width: 9 },   // A: 試合番号（決勝R のような3文字ラベルまで収める）
-  { col: 2, width: 20 },  // B: 左チーム / ブラケット第1列
+  { col: 2, width: BOX_COL_UNITS },  // B: 左チーム / ブラケット第1列
   { col: 3, width: 4 },   // C: vs / 連結線（実物と同じ30px。ここを塗って経路の帯にする）
-  { col: 4, width: 20 },  // D: 右チーム / ブラケット第2列
+  { col: 4, width: BOX_COL_UNITS },  // D: 右チーム / ブラケット第2列
   { col: 5, width: 4 },   // E: 連結線
   // F は下の表の「行き先」「決定方法」にも使うが、幅はブラケットの箱に合わせる。
   // ここだけ広くすると、ブラケットの3ラウンド目の箱だけが横に伸び、
   // 経路を塗ったときに1箇所だけ赤い板になる。表側は 5〜6列の結合で幅を確保する。
-  { col: 6, width: 20 },  // F: 説明 / ブラケット第3列
+  { col: 6, width: BOX_COL_UNITS },  // F: 説明 / ブラケット第3列
 ];
 
 /**
@@ -58,9 +59,7 @@ export const helperRow = (matchIndex) => matchIndex + 2;
 export function lastBracketCol(tournament) {
   const cols = [6];
   if (tournament.tree) cols.push(2 + 2 * (tournament.tree.levels.length - 1));
-  if (tournament.loserTree?.levels?.length) {
-    cols.push(2 + 2 * (tournament.loserTree.levels.length - 1));
-  }
+  if (tournament.loserTree?.levels?.length) cols.push(loserBracketCol(tournament));
   return Math.max(...cols);
 }
 
@@ -92,7 +91,7 @@ export function layoutBracketSheet(tournament) {
   // 連結線は条件付き書式で塗って経路を示すため、太いと線ではなく矩形に見える。
   // 偶数列がチーム名、奇数列が連結線という並びは、そのままブラケット図の列構成になる。
   for (let c = 7; c <= lastBracketCol(tournament); c++) {
-    g.setColumnWidth(c, c % 2 === 0 ? 20 : 4);
+    g.setColumnWidth(c, c % 2 === 0 ? BOX_COL_UNITS : 4);
   }
 
   let row = 1;
@@ -182,7 +181,10 @@ export function layoutBracketSheet(tournament) {
     }
     for (let i = 0; i < group.semis.length; i++) {
       const { row: r, col: c } = bracketCell(base, 1, i);
+      // role を付け忘れると枠線も地色も折り返しも当たらず、ここだけ素のセルになる。
+      // チーム名が入る枠なので、実名が長いと隣の連結列の罫線の上へ溢れる。
       g.set(r, c, liveRefFormula(tournament, { type: 'winner', match: group.semis[i].id, matchLabel: group.semis[i].label }), {
+        role: 'slot',
         winnerOf: group.final.id,
       });
     }
@@ -434,6 +436,15 @@ function renderTree(g, tournament, startRow, inBracket) {
       // シード印はチーム名の左隣へ。名前の文字列に足すと、勝ち上がりの条件付き書式が
       // 「表示中の文字列＝勝者セル」で比較しているため一致しなくなる。
       if (seeded && j === 0) g.set(r, c - 1, '★', { role: 'seed' });
+      // 試合番号。実物は連結列に置くが、そこは勝ち上がりの帯で塗る列で、
+      // 塗られると濃い赤地に文字が乗って読めない。入力の列（連結列のひとつ左）に
+      // 右寄せで置くと「番号 → 線 → 勝者の箱」の順に読め、帯とも重ならない。
+      if (ref.type === 'winner') {
+        const m = tournament.matches.find((x) => x.id === ref.match);
+        if (m && c - 2 >= 1 && !g.cells.has(`${r},${c - 2}`)) {
+          g.set(r, c - 2, m.label, { role: 'matchNo' });
+        }
+      }
       if (ref.type === 'winner') inBracket.add(ref.match);
       // 勝ち上がったら、次のラウンドへ向かう連結列を塗ってマーカー線にする
       if (style.winnerOf && up) {
@@ -445,16 +456,70 @@ function renderTree(g, tournament, startRow, inBracket) {
   return base + bracketHeight(levels[0].length) + 1;
 }
 
+/** 敗者側の枠の間隔（行）。実物と同じ4行。詰めると縦の連結線が短くなり経路を追えない。 */
+const LOSER_ROW_STEP = 4;
+
+/**
+ * 敗者側の合流をそのまま木にする。
+ *
+ * 小ラウンド（敗者同士）は隣り合う2枠が組み、大ラウンドは生き残り枠と
+ * 勝者側から落ちてくる枠が組む。片側が不戦勝の段は試合ではないので節を作らず、
+ * 生きている側をそのまま上へ送る。こうすると木の深さが実際に戦う試合数と一致し、
+ * 深さをそのまま列に写すだけで「1試合の2枠が必ず同じ列に並ぶ」形になる。
+ * 段の番号をそのまま列にしていた頃は、不戦勝で素通りした枠だけが列に取り残され、
+ * 同じ試合の2枠が2列離れて並んでいた。
+ */
+function loserTreeNodes(levels) {
+  let nodes = levels[0].refs.map((ref) => (ref ? { kind: 'leaf', ref } : null));
+  for (let j = 1; j < levels.length; j++) {
+    const lv = levels[j];
+    const minor = lv.kind === 'minor';
+    const next = [];
+    for (let i = 0; i < lv.refs.length; i++) {
+      const a = minor ? nodes[2 * i] : nodes[i];
+      const dropRef = minor ? null : lv.drops?.[i] ?? null;
+      const b = minor ? nodes[2 * i + 1] : dropRef ? { kind: 'leaf', ref: dropRef } : null;
+      next.push(a && b ? { kind: 'match', ref: lv.refs[i], a, b, drop: !minor } : a ?? b ?? null);
+    }
+    nodes = next;
+  }
+  return nodes[0] ?? null;
+}
+
+/** 木の深さ。そのまま「敗者側の右端の列 ＝ 2 + 2·深さ」になる。 */
+function loserDepth(node) {
+  return node && node.kind === 'match' ? Math.max(loserDepth(node.a), loserDepth(node.b)) + 1 : 0;
+}
+
+/**
+ * 敗者側が使う一番右の列。
+ * 列幅と隠し補助列の位置は図を描く前に決まっている必要があるので、ここだけ先に計算する。
+ */
+export function loserBracketCol(tournament) {
+  const levels = tournament.loserTree?.levels;
+  if (!levels?.length) return 0;
+  const root = loserTreeNodes(levels);
+  return root ? 2 + 2 * loserDepth(root) : 0;
+}
+
 /**
  * 敗者側を図として描く。
  *
- * 勝者側と違って木構造にならない。小ラウンド（敗者同士）でスロットが半分になり、
- * 大ラウンド（勝者側の脱落者と対戦）では数が変わらないため、行間隔が倍々にならない。
- * そこで行位置を反復で追う: 小ラウンドでは対になる2つの中点へ寄せ、大ラウンドでは動かさない。
+ * 勝者側と違って段の数がそのまま木の深さにならない。小ラウンド（敗者同士）は
+ * 枠が半分になるが、大ラウンドでは勝者側から落ちてきた枠が新しく合流するので
+ * 枠数が変わらない。つまり大ラウンドの入力の片方は、図の左から流れてくるのではなく
+ * その列で新しく現れる。この入口を描かないと、敗者側の全試合が
+ * 「対戦相手のいない箱」に見える。
+ *
+ * 配置は実物（10team_double_auto.xlsx の裏ブロック）と同じ規則で決める:
+ *   - 1試合の2枠は必ず同じ列に置き、勝者を隣の列の中点に出す
+ *   - 勝者側から落ちてくる枠は、生き残り枠の真下（+4行・同じ列）に置く
  */
 function renderLoserTree(g, tournament, startRow, inBracket) {
   const { levels, title } = tournament.loserTree;
   if (!levels.length) return startRow;
+  const root = loserTreeNodes(levels);
+  if (!root) return startRow;
 
   let row = startRow;
   g.set(row, 1, `■ ${title}`, { role: 'section' });
@@ -462,61 +527,72 @@ function renderLoserTree(g, tournament, startRow, inBracket) {
   row += 1;
   const base = row;
 
-  let rows = levels[0].refs.map((_, i) => base + 2 * i + 1);
-  const placed = [{ rows, level: levels[0], col: 2 }];
+  const entries = [];  // 箱を描く入口。敗者側1回戦の枠と、勝者側から落ちてくる枠。
+  const merges = [];   // { a, b, out } 合流する2枠と、その勝者が入る枠
+  let cursor = base + 1;
 
-  for (let j = 1; j < levels.length; j++) {
-    if (levels[j].kind === 'minor') {
-      const next = [];
-      for (let i = 0; i < levels[j].refs.length; i++) {
-        next.push(Math.round((rows[i * 2] + rows[i * 2 + 1]) / 2));
-      }
-      rows = next;
+  const place = (node, col) => {
+    if (node.kind === 'leaf') {
+      const slot = { ref: node.ref, row: cursor, col };
+      cursor += LOSER_ROW_STEP;
+      entries.push(slot);
+      return slot;
     }
-    placed.push({ rows: rows.slice(), level: levels[j], col: 2 + 2 * j });
+    const a = place(node.a, col - 2);
+    let b;
+    if (node.drop) {
+      // 落ちてくる枠は木の下端ではなく、生き残り枠の真下に置く。
+      // 下端まで送ると中点が大きく下がり、合流だけが縦に間延びする。
+      b = { ref: node.b.ref, row: a.row + LOSER_ROW_STEP, col: col - 2 };
+      entries.push(b);
+      cursor = Math.max(cursor, b.row + LOSER_ROW_STEP);
+    } else {
+      b = place(node.b, col - 2);
+    }
+    const out = { ref: node.ref, row: Math.round((a.row + b.row) / 2), col };
+    merges.push({ a, b, out });
+    return out;
+  };
+  const top = place(root, 2 + 2 * loserDepth(root));
+
+  const boxOf = new Map();
+  const draw = (slot, role) => {
+    const style = { role };
+    const next = nextMatchOf(tournament, slot.ref, null);
+    if (next) style.winnerOf = next;
+    else if (slot.ref.type === 'winner') style.championOf = slot.ref.match;
+    g.set(slot.row, slot.col, liveRefFormula(tournament, slot.ref), style);
+    if (slot.ref.type === 'winner') inBracket.add(slot.ref.match);
+    boxOf.set(slot, a1(slot.row, slot.col));
+  };
+  for (const s of entries) draw(s, 'team');
+  for (const m of merges) draw(m.out, 'slot');
+
+  for (const { a, b, out } of merges) {
+    // a.col と b.col は必ず out.col - 2 なので、連結列は両方の箱のすぐ隣になる。
+    const conn = out.col - 1;
+    const played = out.ref.type === 'winner' ? out.ref.match : nextMatchOf(tournament, a.ref, null);
+    for (const side of [a, b]) {
+      g.border(side.row, side.col, side.row, side.col, 'bottom');
+      g.path(side.row, out.row, conn, boxOf.get(side), played);
+    }
+    g.border(Math.min(a.row, b.row) + 1, conn, Math.max(a.row, b.row), conn, 'left');
+    g.border(out.row, conn, out.row, conn, 'bottom');
+    // 試合番号。実物は連結列に置くが、そこは勝ち上がりの帯で塗る列なので、
+    // 塗られると濃い赤地に文字が乗って読めなくなる。連結列のひとつ左・勝者と同じ行に
+    // 右寄せで置くと、読む順が「番号 → 線 → 勝者の箱」になり帯とも重ならない。
+    if (out.ref.type === 'winner') {
+      const m = tournament.matches.find((x) => x.id === out.ref.match);
+      if (m) g.set(out.row, out.col - 2, m.label, { role: 'matchNo' });
+    }
   }
 
-  placed.forEach((p, j) => {
-    p.level.refs.forEach((ref, i) => {
-      if (!ref) return;
-      // 勝者側と同じ理由で、試合を経ていない通過枠には箱を描かない
-      if (j > 0 && ref.type !== 'winner') return;
-      const parent = placed[j + 1];
-      const parentRef = parent
-        ? parent.level.refs[parent.level.kind === 'minor' ? Math.floor(i / 2) : i]
-        : null;
-      const style = { role: j === 0 ? 'team' : 'slot' };
-      const next = nextMatchOf(tournament, ref, parentRef);
-      if (next) style.winnerOf = next;
-      else if (ref.type === 'winner') style.championOf = ref.match;
-      g.set(p.rows[i], p.col, liveRefFormula(tournament, ref), style);
-      if (ref.type === 'winner') inBracket.add(ref.match);
-      if (style.winnerOf && parent) {
-        const idx = parent.level.kind === 'minor' ? Math.floor(i / 2) : i;
-        g.path(p.rows[i], parent.rows[idx], p.col + 1, a1(p.rows[i], p.col), style.winnerOf);
-      }
-      // 横線。小ラウンドの合流は下で縦線もつなぐ
-      g.border(p.rows[i], p.col, p.rows[i], p.col, 'bottom');
-      // 大ラウンドは合流の縦線が無いので、前の列から横線でつなぐ
-      if (j > 0 && p.level.kind === 'major') {
-        g.border(p.rows[i], p.col - 1, p.rows[i], p.col - 1, 'bottom');
-      }
-    });
+  // 敗者側の頂点。この先は決勝なので合流が無く、下線だけ引く。
+  g.border(top.row, top.col, top.row, top.col, 'bottom');
 
-    const next = placed[j + 1];
-    if (next && next.level.kind === 'minor') {
-      for (let k = 0; k < next.level.refs.length; k++) {
-        if (!next.level.refs[k]) continue;
-        const top = p.rows[k * 2];
-        const bottom = p.rows[k * 2 + 1];
-        const conn = p.col + 1;
-        g.border(top + 1, conn, bottom, conn, 'left');
-        g.border(next.rows[k], conn, next.rows[k], conn, 'bottom');
-      }
-    }
-  });
-
-  return base + levels[0].refs.length * 2 + 1;
+  let bottom = base;
+  for (const s of [...entries, ...merges.map((m) => m.out)]) bottom = Math.max(bottom, s.row + 1);
+  return bottom + 1;
 }
 
 /**
@@ -538,10 +614,13 @@ function renderGroupStandings(g, tournament, startRow) {
     g.cells.get(`${row},1`).value = '順位';
     g.cells.get(`${row},2`).value = 'チーム名';
     g.cells.get(`${row},3`).value = '勝';
-    // 幅の広い4列目にセット（「12-9」のような2桁同士が入る）、狭い5列目に直対（1桁）を置く。
-    // 列幅はブラケット図と共有していて、順位表だけ変えることはできない。
+    // 幅の広い4列目にセット（「12-9」のような2桁同士が入る）、狭い5列目に直接対決（1桁）を置く。
+    // 列幅はブラケット図と共有していて、順位表だけ変えることはできない。5列目は連結列でもあり、
+    // 広げると勝ち上がりの帯が線ではなく矩形に見えるので、見出しを1文字に縮めて収める。
+    // 30px の列で使えるのは余白（CELL_PAD_PX）を引いた 20px。10pt の全角は1文字 13.3px なので
+    // 「直対」（26.7px）は入らず、右端が切れる。読み方は下の凡例で補う。
     g.cells.get(`${row},4`).value = 'セット';
-    g.cells.get(`${row},5`).value = '直対';
+    g.cells.get(`${row},5`).value = '直';
     g.cells.get(`${row},6`).value = 'じゃんけん';
     row += 1;
 
@@ -566,7 +645,7 @@ function renderGroupStandings(g, tournament, startRow) {
     row += 1;
   }
 
-  g.set(row, 1, '※ 上位の色付きが決勝トーナメント進出。順位は 勝数 → 直接対決 → セット率 の順で決めます。すべて並んだ組は「じゃんけん」欄が黄色くなるので、入力用タブの下部にある「じゃんけん」欄に、代表者のじゃんけんで決めた順位（1が勝ち）を入れてください。', { role: 'note' });
+  g.set(row, 1, '※ 上位の色付きが決勝トーナメント進出。順位は 勝数（勝） → 直接対決（直） → セット率（セット） の順で決めます。すべて並んだ組は「じゃんけん」欄が黄色くなるので、入力用タブの下部にある「じゃんけん」欄に、代表者のじゃんけんで決めた順位（1が勝ち）を入れてください。', { role: 'note' });
   g.merge(row, 1, row, 6);
   return row + 2;
 }

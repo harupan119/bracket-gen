@@ -182,24 +182,28 @@ test('ダブルは敗者側も図として描かれる', () => {
   }
 });
 
-test('敗者側は小ラウンドで行が寄り、大ラウンドで動かない', () => {
-  const t = buildTournament({ format: 'double-elimination', teams: 16, courts: 4, scoring: 'win-loss' });
-  const g = layoutBracketSheet(t);
-  const head = [...g.cells.values()].find((c) => c.col === 1 && String(c.value).includes('敗者側ブラケット'));
-  const base = head.row + 1;
-  // 敗者側の区画だけを見る。下には決勝や最終順位が続くので範囲を区切る。
-  const end = base + t.loserTree.levels[0].refs.length * 2;
-  const at = (col) => [...g.cells.values()]
-    .filter((c) => c.col === col && c.row > base && c.row <= end && !c.style.helper)
-    .map((c) => c.row).sort((a, b) => a - b);
-  const drop = at(2);   // 8スロット
-  const minor = at(4);  // 小ラウンド: 4スロット、対の中点へ
-  const major = at(6);  // 大ラウンド: 4スロット、行は動かない
-  assert.equal(drop.length, 8);
-  assert.equal(minor.length, 4);
-  assert.equal(major.length, 4);
-  assert.deepEqual(minor, [0, 1, 2, 3].map((i) => Math.round((drop[i * 2] + drop[i * 2 + 1]) / 2)));
-  assert.deepEqual(major, minor, '大ラウンドは行を動かさない');
+test('敗者側は各試合の入力を2つとも描き、勝者枠をその中点に置く', () => {
+  // 大ラウンドの相手（勝者側から落ちてくる枠）を描かないと、各試合が対戦相手のいない
+  // 箱に見える。実シートでこの状態になっていたので、両方の入力があることを固定する。
+  for (const teams of [8, 10, 16]) {
+    const t = buildTournament({ format: 'double-elimination', teams, courts: 2, scoring: 'win-loss' });
+    const g = layoutBracketSheet(t);
+    const cells = [...g.cells.values()].filter((c) => !c.style.helper);
+    const head = cells.find((c) => c.col === 1 && String(c.value).includes('敗者側ブラケット'));
+    const fin = cells.find((c) => c.col === 1 && String(c.value).includes('■ 決勝'));
+    const inLb = (c) => c.row > head.row && c.row < fin.row;
+    for (const m of t.matches.filter((x) => x.bracket === 'L')) {
+      const ins = cells.filter((c) => inLb(c) && c.style.winnerOf === m.id).sort((a, b) => a.row - b.row);
+      assert.equal(ins.length, 2, `${teams}チーム ${m.label}: 入力の箱が${ins.length}個`);
+      const out = cells.find((c) => inLb(c) && String(c.value).includes(`${m.label}の勝者`));
+      assert.ok(out, `${teams}チーム ${m.label}の勝者 の枠が無い`);
+      assert.equal(out.row, Math.round((ins[0].row + ins[1].row) / 2), `${teams}チーム ${m.label}: 勝者枠が中点に無い`);
+      // 実物と同じ「1試合の2枠は同じ列、勝者は隣の列」。段の番号をそのまま列にしていた頃は
+      // 不戦勝で素通りした枠だけが左に取り残され、同じ試合の2枠が2列離れて並んでいた。
+      assert.equal(ins[0].col, ins[1].col, `${teams}チーム ${m.label}: 入力の2枠が別の列にある`);
+      assert.equal(out.col, ins[0].col + 2, `${teams}チーム ${m.label}: 勝者枠が入力の隣の列に無い`);
+    }
+  }
 });
 
 test('ブラケットの頂点は優勝でなく「次の試合」を指す', () => {
@@ -214,4 +218,54 @@ test('ブラケットの頂点は優勝でなく「次の試合」を指す', ()
   // 勝者側と敗者側の頂点は決勝を指す
   const toFinal = [...g.cells.values()].filter((c) => c.style.winnerOf && label(c.style.winnerOf) === '決勝');
   assert.ok(toFinal.length >= 2, '両ブラケットの頂点が決勝を指していない');
+});
+
+test('順位表の見出しが列幅に収まる（余白を引いた実効幅で判定）', async () => {
+  // 30px の連結列で実際に使えるのは余白を引いた 20px。「直対」は 10pt で 26.7px あり入らない。
+  // 以前ここを2文字に戻して右端が切れたことがあるので、幅の判定ごと固定する。
+  const { fitsInColumn } = await import('../core/util.js');
+  const { THEME, ROLES } = await import('../core/theme.js');
+  const size = THEME.sizes[ROLES.tableHeader.size];
+  for (const teams of [8, 12, 20]) {
+    const t = buildTournament({ format: 'group-stage', teams, courts: 2, scoring: 'sets-of-3' });
+    const g = layoutBracketSheet(t);
+    const headers = [...g.cells.values()].filter((c) => c.style?.role === 'tableHeader' && c.value);
+    assert.ok(headers.length > 0, `${teams}チーム: 見出しが無い`);
+    for (const c of headers) {
+      // 結合されている見出し（「行き先」＝5〜6列）は結合先まで足した幅が使える。
+      const m = g.merges.find((x) => x.r1 <= c.row && c.row <= x.r2 && x.c1 <= c.col && c.col <= x.c2);
+      const cols = m ? range(m.c1, m.c2) : [c.col];
+      if (cols.some((col) => g.columns.get(col) == null)) continue; // 既定幅の列は対象外
+      const units = cols.reduce((sum, col) => sum + g.columns.get(col), 0);
+      assert.ok(
+        fitsInColumn(String(c.value), size, units),
+        `${teams}チーム: 見出し「${c.value}」が ${units * 7.5}px の列に収まらない`
+      );
+    }
+  }
+});
+
+function range(a, b) {
+  return Array.from({ length: b - a + 1 }, (_, i) => a + i);
+}
+
+test('チーム名が入るセルには必ず役割が付く', () => {
+  // 完全順位決定の準決勝勝者セルが role 無しのままで、枠線も地色も文字サイズも
+  // 折り返しも当たっていなかった。役割が付かないセルは書式の対象から丸ごと外れるので、
+  // 「見た目が1箇所だけ素になる」形で静かに壊れる。
+  for (const format of ['single-elimination', 'double-elimination', 'full-placement', 'group-stage']) {
+    for (const teams of [8, 10, 16]) {
+      let t;
+      try {
+        t = buildTournament({ format, teams, courts: 2, scoring: 'sets-of-3' });
+      } catch {
+        continue; // 完全順位決定は2の冪のみ
+      }
+      const g = layoutBracketSheet(t);
+      const bare = [...g.cells.values()]
+        .filter((c) => !c.style?.helper && !c.style?.role && String(c.value).startsWith('=IF('))
+        .map((c) => a1(c.row, c.col));
+      assert.deepEqual(bare, [], `${format} ${teams}チーム: 役割の無い数式セル`);
+    }
+  }
 });

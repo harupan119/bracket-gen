@@ -118,7 +118,10 @@ test('経路の本数がブラケットのスロット数と釣り合う', async
   const cases = [
     ['single-elimination', 8, 14],
     ['full-placement', 8, 8],
-    ['double-elimination', 10, 39],
+    // 敗者側は各試合の入力2つぶんだけ帯を引く。2枠が必ず同じ列に並ぶようになり、
+    // 連結列が箱のすぐ隣に来たので、横断する列を塗り足す必要が無くなった:
+    // 裏①〜裏⑧が各2本で16本、勝者側と決勝で30本。
+    ['double-elimination', 10, 46],
   ];
   for (const [format, teams, expected] of cases) {
     const g = layoutBracketSheet(buildTournament({ format, teams, courts: 2, scoring: 'win-loss' }));

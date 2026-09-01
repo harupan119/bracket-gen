@@ -105,6 +105,7 @@ function sheetHtml(sheetId, title) {
         t.fontSize ? `font-size:${t.fontSize}px` : '',
         t.foregroundColor ? `color:${rgb(t.foregroundColor)}` : '',
         f.horizontalAlignment === 'CENTER' ? 'text-align:center' : '',
+        f.horizontalAlignment === 'RIGHT' ? 'text-align:right' : '',
       ];
       for (const side of ['top', 'bottom', 'left', 'right']) {
         const e = edge.get(`${rr},${cc},${side}`);

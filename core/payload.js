@@ -31,6 +31,7 @@ export function buildSpreadsheetPayload(tournament) {
         gridProperties: {
           rowCount: Math.max(grid.maxRow + 5, 20),
           columnCount: Math.max(grid.maxCol + 2, 8),
+          hideGridlines: true,
         },
       },
     })),
@@ -51,14 +52,20 @@ export function buildSpreadsheetPayload(tournament) {
         },
       });
     }
+    // 既定の格子は自前で引く罫線と二重に見えるので消す。テンプレ側だけで消しても、
+    // そこから作られていないシートでは再発するため、生成のたびに指定する。
+    const gridProps = { hideGridlines: true };
+    const gridFields = ['gridProperties.hideGridlines'];
     if (grid.frozenRows) {
-      requests.push({
-        updateSheetProperties: {
-          properties: { sheetId, gridProperties: { frozenRowCount: grid.frozenRows } },
-          fields: 'gridProperties.frozenRowCount',
-        },
-      });
+      gridProps.frozenRowCount = grid.frozenRows;
+      gridFields.push('gridProperties.frozenRowCount');
     }
+    requests.push({
+      updateSheetProperties: {
+        properties: { sheetId, gridProperties: gridProps },
+        fields: gridFields.join(','),
+      },
+    });
     for (const b of grid.borders) {
       requests.push({
         updateBorders: {
@@ -193,6 +200,7 @@ function roleFormatRequests(sheetId, grid) {
     fmt.backgroundColor = toRgb(THEME.colors[role.fill ?? 'white']);
     fmt.horizontalAlignment = role.align ?? 'LEFT';
     if (role.text) fmt.numberFormat = { type: 'TEXT' };
+    if (role.wrap) fmt.wrapStrategy = 'WRAP';
     const fields = [
       'userEnteredFormat.backgroundColor',
       'userEnteredFormat.horizontalAlignment',
@@ -200,6 +208,7 @@ function roleFormatRequests(sheetId, grid) {
       'userEnteredFormat.textFormat.fontSize',
       'userEnteredFormat.textFormat.foregroundColor',
       ...(role.text ? ['userEnteredFormat.numberFormat'] : []),
+      ...(role.wrap ? ['userEnteredFormat.wrapStrategy'] : []),
     ].join(',');
     for (const box of rectangles(cells)) {
       out.push({

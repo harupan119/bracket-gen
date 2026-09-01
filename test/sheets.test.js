@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildTournament } from '../core/index.js';
-import { layoutControlSheet, layoutMobileSheet, layoutProgressSheet, cellRefs, TABS } from '../core/sheets.js';
+import { layoutControlSheet, layoutMobileSheet, layoutProgressSheet, cellRefs, TABS, refPlaceholder } from '../core/sheets.js';
+import { textPx, COL_UNIT_PX } from '../core/util.js';
+import { THEME } from '../core/theme.js';
 import { getScoring, SCORING } from '../core/scoring.js';
 
 const make = (opts = {}) =>
@@ -172,5 +174,26 @@ test('選択肢にない値は「入力エラー」にし、勝敗を判定し�
     const state = g.cells.get(`${r},7`).value;
     assert.match(state, /"入力エラー"/, `${name}: エラー状態が無い`);
     assert.match(state, /"未入力"/, `${name}: 未入力と区別していない`);
+  }
+});
+
+
+test('入力用の対戦カード列に、実際に出る文字列が収まる', () => {
+  // 「（Hチーム） vs （Iチーム）」は 195px あり、以前の固定幅 22（165px）では両端が切れていた。
+  // 数式がセル参照の連結なので、表示テキストを数式から測ることはできない。模型から組み立てて測る。
+  for (const [format, teams] of [
+    ['single-elimination', 8],
+    ['double-elimination', 10],
+    ['full-placement', 16],
+    ['group-stage', 12],
+  ]) {
+    const t = buildTournament({ format, teams, courts: 2, scoring: 'sets-of-3' });
+    const g = layoutMobileSheet(t);
+    const avail = g.columns.get(2) * COL_UNIT_PX;
+    for (const m of t.matches) {
+      const txt = `${refPlaceholder(m.left)} vs ${refPlaceholder(m.right)}`;
+      const need = textPx(txt, THEME.sizes.body);
+      assert.ok(need <= avail, `${format}/${teams}: "${txt}" は ${Math.ceil(need)}px 必要だが ${avail}px しかない`);
+    }
   }
 });
