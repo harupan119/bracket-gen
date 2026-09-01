@@ -1,0 +1,32 @@
+# main への取り込みの門番。単独運用でレビュー相手がいないので、
+# 「誰かが見る」ではなく「テストが通る」を必須条件にする。
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # ジョブ名がそのまま required status check の名前になる。
+  # ruleset 側の指定と揃える必要があるので、安易に変えない。
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # 依存パッケージを持たないので install は要らない。
+      - run: npm test
+
+      # apps-script/core.bundle.gs は core/ から生成する。手で直したり
+      # 再ビルドを忘れたりすると、配布するスクリプトだけが古いまま残り、
+      # ローカルのテストが全部緑でもテンプレの挙動だけが変わらない。
+      - run: npm run build
+      - name: 生成物が core/ と一致しているか
+        run: git diff --exit-code -- apps-script/core.bundle.gs
