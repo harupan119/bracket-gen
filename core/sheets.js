@@ -246,7 +246,8 @@ export function layoutProgressSheet(tournament) {
         const m = tournament.matches.find((x) => x.id === entry.matchId);
         const c = cellRefs.controlRow(matchIndex(tournament, entry.matchId));
         const value =
-          k === 0 ? `${entry.matchLabel}　${m.roundName}`
+          // 試合名とラウンド名が同じときは繰り返さない（「決勝　決勝」を避ける）。
+          k === 0 ? (m.roundName === entry.matchLabel ? entry.matchLabel : `${entry.matchLabel}　${m.roundName}`)
           : k === 1 ? `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`
           : k === 2 ? `=IF('${TABS.control}'!$D$${c}="","",'${TABS.control}'!$D$${c})`
           : `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`;

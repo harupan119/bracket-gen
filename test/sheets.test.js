@@ -225,3 +225,21 @@ test('入力用の対戦カード列に、実際に出る文字列が収まる',
     }
   }
 });
+
+test('進行表の試合名がラウンド名と重複しない', () => {
+  // 決勝は label も roundName も「決勝」なので、素で連結すると「決勝　決勝」になる。
+  for (const format of ['single-elimination', 'double-elimination', 'full-placement']) {
+    for (const teams of [8, 10, 16]) {
+      let t;
+      try {
+        t = buildTournament({ format, teams, courts: 2, scoring: 'sets-of-3' });
+      } catch {
+        continue;
+      }
+      for (const c of layoutProgressSheet(t).cells.values()) {
+        const v = String(c.value);
+        assert.equal(/^(.+)　\1$/.test(v), false, `${format} ${teams}チーム: 「${v}」が重複している`);
+      }
+    }
+  }
+});

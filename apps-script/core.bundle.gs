@@ -1285,7 +1285,10 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
           }
           const m = tournament.matches.find((x) => x.id === entry.matchId);
           const c = cellRefs.controlRow(matchIndex(tournament, entry.matchId));
-          const value2 = k === 0 ? `${entry.matchLabel}\u3000${m.roundName}` : k === 1 ? `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}` : k === 2 ? `=IF('${TABS.control}'!$D$${c}="","",'${TABS.control}'!$D$${c})` : `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`;
+          const value2 = (
+            // 試合名とラウンド名が同じときは繰り返さない（「決勝　決勝」を避ける）。
+            k === 0 ? m.roundName === entry.matchLabel ? entry.matchLabel : `${entry.matchLabel}\u3000${m.roundName}` : k === 1 ? `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}` : k === 2 ? `=IF('${TABS.control}'!$D$${c}="","",'${TABS.control}'!$D$${c})` : `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`
+          );
           const style = { role: kind.role };
           if (k === 3) style.progressWinner = true;
           g.set(row + k, courtCol(n), value2, style);
