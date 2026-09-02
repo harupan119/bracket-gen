@@ -3,7 +3,7 @@ import { getScoring, validScore } from './scoring.js';
 import { eliminationRule } from './layout.js';
 import { writeStandings, groupRankFormula } from './standings.js';
 import { TEAM_INPUT_ROW, MOBILE_ROW, controlRow, standingsLayout, jankenRow } from './rows.js';
-import { teamLabel, textPx, colUnits, fullWidthFit, CELL_PAD_PX } from './util.js';
+import { teamLabel, textPx, colUnits, fullWidthFit, CELL_PAD_PX, BOX_COL_UNITS } from './util.js';
 import { THEME } from './theme.js';
 
 export const TABS = {
@@ -166,18 +166,40 @@ function renderJankenInput(g, tournament) {
   }
 }
 
-/** 進行表タブ。チーム名の記入欄と、枠ごとの進行一覧。 */
+/**
+ * 進行表タブ。チーム名の記入欄と、枠ごとの進行表。
+ *
+ * 進行は「枠が行・コートが列」の行列にする。1試合1行の縦並びだと、同時に走る試合が
+ * 縦に散り、当日どのコートで何が動いているかが読めない。実物のタイムテーブルと同じく
+ * 1枠を3行（試合／対戦／結果）に組み、コートを列に並べる。
+ */
 export function layoutProgressSheet(tournament) {
   const g = new Grid(TABS.progress);
   g.frozenRows = 2;
-  g.setColumnWidth(1, 8).setColumnWidth(2, 20).setColumnWidth(3, 8)
-    .setColumnWidth(4, 26).setColumnWidth(5, 12).setColumnWidth(6, 16);
+
+  // コートが列になるので、表の右端はコート数で決まる。
+  const courtCol = (n) => 2 + n;
+  const lastCol = courtCol(tournament.courts);
+  // コートの列には「左の目印 vs 右の目印」と「表①　勝者側 1回戦」が入る。
+  // 実際に出る文字列から幅を決める。既定の150pxだと前者が収まらない。
+  const courtPx = Math.max(
+    ...tournament.matches.map((m) =>
+      Math.max(
+        textPx(`${refPlaceholder(m.left)} vs ${refPlaceholder(m.right)}`, THEME.sizes.body),
+        textPx(`${m.label}　${m.roundName}`, THEME.sizes.body)
+      )
+    )
+  );
+  g.setColumnWidth(1, 8).setColumnWidth(2, BOX_COL_UNITS);
+  for (let n = 1; n <= tournament.courts; n++) {
+    g.setColumnWidth(courtCol(n), colUnits(courtPx + CELL_PAD_PX));
+  }
 
   g.set(1, 1, tournament.title || `進行表（${tournament.teams}チーム・全${tournament.matches.length}試合）`, { role: 'title' });
   g.set(2, 1, `コート${tournament.courts}面／全${tournament.slots.length}枠／全${tournament.matches.length}試合／${eliminationRule(tournament)}`, { role: 'note' });
 
   g.set(4, 1, '■ 出場チーム（ここに記入すると全タブの対戦カードに反映されます）', { role: 'section' });
-  g.merge(4, 1, 4, 6);
+  g.merge(4, 1, 4, lastCol);
   g.set(5, 1, '記号', { role: 'tableHeader' });
   g.set(5, 2, 'チーム名', { role: 'tableHeader' });
   tournament.teamLabels.forEach((label, i) => {
@@ -191,24 +213,53 @@ export function layoutProgressSheet(tournament) {
     `※ 全角${fullWidthFit(THEME.sizes.body)}文字を超えると、ブラケットの枠の中で折り返します`, { role: 'note' });
 
   let row = TEAM_INPUT_ROW + tournament.teams + 1;
-  g.set(row, 1, `■ 進行順（枠の中の試合は同時に進行。枠が終わったら次の枠へ）${tournament.avoidBackToBack ? '　※連戦をなるべく避けて並べています' : ''}`, { role: 'section' });
-  g.merge(row, 1, row, 6);
-  row += 1;
-  ['枠', 'コート', '試合', '対戦カード', '結果', '勝者'].forEach((h, i) => g.set(row, i + 1, h, { role: 'tableHeader' }));
+  g.set(row, 1, `■ 進行順（同じ行の試合は同時に進行。行が終わったら次の行へ）${tournament.avoidBackToBack ? '　※連戦をなるべく避けて並べています' : ''}`, { role: 'section' });
+  g.merge(row, 1, row, lastCol);
   row += 1;
 
+  g.set(row, 1, '枠', { role: 'tableHeader' });
+  g.set(row, 2, '', { role: 'tableHeader' });
+  for (let n = 1; n <= tournament.courts; n++) {
+    g.set(row, courtCol(n), `コート${n}`, { role: 'tableHeader' });
+  }
+  row += 1;
+
+  // 1枠 = 3行。左端に枠の番号を縦に結合して置き、その右に行の意味を書く。
+  const ROWS = [
+    { label: '試合', role: 'label' },
+    { label: '対戦', role: 'slot' },
+    { label: '結果', role: 'body' },
+    { label: '勝者', role: 'slot' },
+  ];
   for (const slot of tournament.slots) {
-    for (const [n, entry] of slot.matches.entries()) {
-      const i = matchIndex(tournament, entry.matchId);
-      const c = cellRefs.controlRow(i);
-      g.set(row, 1, n === 0 ? slot.label : '', { role: 'label' });
-      g.set(row, 2, `コート${entry.court}`, { role: 'body' });
-      g.set(row, 3, entry.matchLabel, { role: 'label' });
-      g.set(row, 4, `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`, { role: 'slot' });
-      g.set(row, 5, `=IF('${TABS.control}'!$D$${c}="","",'${TABS.control}'!$D$${c})`, { role: 'body' });
-      g.set(row, 6, `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`, { role: 'slot' });
-      row += 1;
-    }
+    const byCourt = new Map(slot.matches.map((e) => [e.court, e]));
+    ROWS.forEach((kind, k) => {
+      if (k === 0) g.set(row + k, 1, slot.label, { role: 'label' });
+      g.set(row + k, 2, kind.label, { role: 'tableHeader' });
+      for (let n = 1; n <= tournament.courts; n++) {
+        const entry = byCourt.get(n);
+        if (!entry) {
+          // その枠で使わないコート。空欄のままだと表の升目が途切れるので、印だけ置く。
+          g.set(row + k, courtCol(n), k === 0 ? '―' : '', { role: 'body' });
+          continue;
+        }
+        const m = tournament.matches.find((x) => x.id === entry.matchId);
+        const c = cellRefs.controlRow(matchIndex(tournament, entry.matchId));
+        const value =
+          k === 0 ? `${entry.matchLabel}　${m.roundName}`
+          : k === 1 ? `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`
+          : k === 2 ? `=IF('${TABS.control}'!$D$${c}="","",'${TABS.control}'!$D$${c})`
+          : `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`;
+        // 勝者のセルは列が固定でなくなった（コートが列になったため）。
+        // 条件付き書式が列番号で拾えないので、印を付けてそちらから探せるようにする。
+        const style = { role: kind.role };
+        if (k === 3) style.progressWinner = true;
+        g.set(row + k, courtCol(n), value, style);
+      }
+    });
+    // 枠の番号は3行ぶんの高さで1つ。行ごとに繰り返すと、どこからどこまでが1枠か読めない。
+    g.merge(row, 1, row + ROWS.length - 1, 1);
+    row += ROWS.length;
   }
   return g;
 }

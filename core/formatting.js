@@ -155,15 +155,20 @@ export function buildConditionalFormatRules(tournament, grids, sheetIds) {
     )
   );
 
-  // 進行表: 勝者列
-  const pg = grids.progress;
-  const winnerRows = [...pg.cells.values()].filter((c) => c.col === 6 && String(c.value).startsWith('='));
-  if (winnerRows.length) {
-    const r1 = Math.min(...winnerRows.map((c) => c.row));
-    const r2 = Math.max(...winnerRows.map((c) => c.row));
+  // 進行表: 勝者のセル。コートが列になったので位置が固定でなく、行も飛び飛びになる。
+  // 列番号で拾うと試合名や結果の行まで巻き込むため、グリッドが付けた印から探す。
+  // 1本のルールに複数の範囲を持たせるので、ルール数は増えない。
+  const winnerCells = [...grids.progress.cells.values()]
+    .filter((c) => c.style?.progressWinner)
+    .sort((a, b) => a.row - b.row || a.col - b.col);
+  if (winnerCells.length) {
     out.push(
       rule(
-        [{ sheetId: sheetIds.progress, startRowIndex: r1 - 1, endRowIndex: r2, startColumnIndex: 5, endColumnIndex: 6 }],
+        winnerCells.map((c) => ({
+          sheetId: sheetIds.progress,
+          startRowIndex: c.row - 1, endRowIndex: c.row,
+          startColumnIndex: c.col - 1, endColumnIndex: c.col,
+        })),
         { type: 'NOT_BLANK' },
         WINNER_FORMAT
       )
