@@ -1226,11 +1226,24 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
   function layoutProgressSheet(tournament) {
     const g = new Grid(TABS.progress);
     g.frozenRows = 2;
-    g.setColumnWidth(1, 8).setColumnWidth(2, 20).setColumnWidth(3, 8).setColumnWidth(4, 26).setColumnWidth(5, 12).setColumnWidth(6, 16);
+    const courtCol = (n) => 2 + n;
+    const lastCol = courtCol(tournament.courts);
+    const courtPx = Math.max(
+      ...tournament.matches.map(
+        (m) => Math.max(
+          textPx(`${refPlaceholder(m.left)} vs ${refPlaceholder(m.right)}`, THEME.sizes.body),
+          textPx(`${m.label}\u3000${m.roundName}`, THEME.sizes.body)
+        )
+      )
+    );
+    g.setColumnWidth(1, 8).setColumnWidth(2, BOX_COL_UNITS);
+    for (let n = 1; n <= tournament.courts; n++) {
+      g.setColumnWidth(courtCol(n), colUnits(courtPx + CELL_PAD_PX));
+    }
     g.set(1, 1, tournament.title || `\u9032\u884C\u8868\uFF08${tournament.teams}\u30C1\u30FC\u30E0\u30FB\u5168${tournament.matches.length}\u8A66\u5408\uFF09`, { role: "title" });
     g.set(2, 1, `\u30B3\u30FC\u30C8${tournament.courts}\u9762\uFF0F\u5168${tournament.slots.length}\u67A0\uFF0F\u5168${tournament.matches.length}\u8A66\u5408\uFF0F${eliminationRule(tournament)}`, { role: "note" });
     g.set(4, 1, "\u25A0 \u51FA\u5834\u30C1\u30FC\u30E0\uFF08\u3053\u3053\u306B\u8A18\u5165\u3059\u308B\u3068\u5168\u30BF\u30D6\u306E\u5BFE\u6226\u30AB\u30FC\u30C9\u306B\u53CD\u6620\u3055\u308C\u307E\u3059\uFF09", { role: "section" });
-    g.merge(4, 1, 4, 6);
+    g.merge(4, 1, 4, lastCol);
     g.set(5, 1, "\u8A18\u53F7", { role: "tableHeader" });
     g.set(5, 2, "\u30C1\u30FC\u30E0\u540D", { role: "tableHeader" });
     tournament.teamLabels.forEach((label, i) => {
@@ -1244,23 +1257,45 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       { role: "note" }
     );
     let row = TEAM_INPUT_ROW + tournament.teams + 1;
-    g.set(row, 1, `\u25A0 \u9032\u884C\u9806\uFF08\u67A0\u306E\u4E2D\u306E\u8A66\u5408\u306F\u540C\u6642\u306B\u9032\u884C\u3002\u67A0\u304C\u7D42\u308F\u3063\u305F\u3089\u6B21\u306E\u67A0\u3078\uFF09${tournament.avoidBackToBack ? "\u3000\u203B\u9023\u6226\u3092\u306A\u308B\u3079\u304F\u907F\u3051\u3066\u4E26\u3079\u3066\u3044\u307E\u3059" : ""}`, { role: "section" });
-    g.merge(row, 1, row, 6);
+    g.set(row, 1, `\u25A0 \u9032\u884C\u9806\uFF08\u540C\u3058\u884C\u306E\u8A66\u5408\u306F\u540C\u6642\u306B\u9032\u884C\u3002\u884C\u304C\u7D42\u308F\u3063\u305F\u3089\u6B21\u306E\u884C\u3078\uFF09${tournament.avoidBackToBack ? "\u3000\u203B\u9023\u6226\u3092\u306A\u308B\u3079\u304F\u907F\u3051\u3066\u4E26\u3079\u3066\u3044\u307E\u3059" : ""}`, { role: "section" });
+    g.merge(row, 1, row, lastCol);
     row += 1;
-    ["\u67A0", "\u30B3\u30FC\u30C8", "\u8A66\u5408", "\u5BFE\u6226\u30AB\u30FC\u30C9", "\u7D50\u679C", "\u52DD\u8005"].forEach((h, i) => g.set(row, i + 1, h, { role: "tableHeader" }));
+    g.set(row, 1, "\u67A0", { role: "tableHeader" });
+    g.set(row, 2, "", { role: "tableHeader" });
+    for (let n = 1; n <= tournament.courts; n++) {
+      g.set(row, courtCol(n), `\u30B3\u30FC\u30C8${n}`, { role: "tableHeader" });
+    }
     row += 1;
+    const ROWS = [
+      { label: "\u8A66\u5408", role: "label" },
+      { label: "\u5BFE\u6226", role: "slot" },
+      { label: "\u7D50\u679C", role: "body" },
+      { label: "\u52DD\u8005", role: "slot" }
+    ];
     for (const slot of tournament.slots) {
-      for (const [n, entry] of slot.matches.entries()) {
-        const i = matchIndex(tournament, entry.matchId);
-        const c = cellRefs.controlRow(i);
-        g.set(row, 1, n === 0 ? slot.label : "", { role: "label" });
-        g.set(row, 2, `\u30B3\u30FC\u30C8${entry.court}`, { role: "body" });
-        g.set(row, 3, entry.matchLabel, { role: "label" });
-        g.set(row, 4, `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`, { role: "slot" });
-        g.set(row, 5, `=IF('${TABS.control}'!$D$${c}="","",'${TABS.control}'!$D$${c})`, { role: "body" });
-        g.set(row, 6, `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`, { role: "slot" });
-        row += 1;
-      }
+      const byCourt = new Map(slot.matches.map((e) => [e.court, e]));
+      ROWS.forEach((kind, k) => {
+        if (k === 0) g.set(row + k, 1, slot.label, { role: "label" });
+        g.set(row + k, 2, kind.label, { role: "tableHeader" });
+        for (let n = 1; n <= tournament.courts; n++) {
+          const entry = byCourt.get(n);
+          if (!entry) {
+            g.set(row + k, courtCol(n), k === 0 ? "\u2015" : "", { role: "body" });
+            continue;
+          }
+          const m = tournament.matches.find((x) => x.id === entry.matchId);
+          const c = cellRefs.controlRow(matchIndex(tournament, entry.matchId));
+          const value2 = (
+            // 試合名とラウンド名が同じときは繰り返さない（「決勝　決勝」を避ける）。
+            k === 0 ? m.roundName === entry.matchLabel ? entry.matchLabel : `${entry.matchLabel}\u3000${m.roundName}` : k === 1 ? `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}` : k === 2 ? `=IF('${TABS.control}'!$D$${c}="","",'${TABS.control}'!$D$${c})` : `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`
+          );
+          const style = { role: kind.role };
+          if (k === 3) style.progressWinner = true;
+          g.set(row + k, courtCol(n), value2, style);
+        }
+      });
+      g.merge(row, 1, row + ROWS.length - 1, 1);
+      row += ROWS.length;
     }
     return g;
   }
@@ -1859,14 +1894,20 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         WINNER_FORMAT
       )
     );
-    const pg = grids.progress;
-    const winnerRows = [...pg.cells.values()].filter((c) => c.col === 6 && String(c.value).startsWith("="));
-    if (winnerRows.length) {
-      const r1 = Math.min(...winnerRows.map((c) => c.row));
-      const r2 = Math.max(...winnerRows.map((c) => c.row));
+    const winnerCells = [...grids.progress.cells.values()].filter((c) => {
+      var _a2;
+      return (_a2 = c.style) == null ? void 0 : _a2.progressWinner;
+    }).sort((a, b) => a.row - b.row || a.col - b.col);
+    if (winnerCells.length) {
       out.push(
         rule(
-          [{ sheetId: sheetIds.progress, startRowIndex: r1 - 1, endRowIndex: r2, startColumnIndex: 5, endColumnIndex: 6 }],
+          winnerCells.map((c) => ({
+            sheetId: sheetIds.progress,
+            startRowIndex: c.row - 1,
+            endRowIndex: c.row,
+            startColumnIndex: c.col - 1,
+            endColumnIndex: c.col
+          })),
           { type: "NOT_BLANK" },
           WINNER_FORMAT
         )

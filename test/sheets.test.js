@@ -113,13 +113,41 @@ test('進行表のチーム名記入欄がチーム数ぶんあり、試合管�
   }
 });
 
-test('進行表の進行順が枠→コートの順に全試合を1回ずつ並べる', () => {
-  const t = make({ courts: 2 });
-  const g = layoutProgressSheet(t);
-  const labels = [...g.cells.values()].filter((c) => c.col === 3 && c.value !== '試合')
-    .sort((a, b) => a.row - b.row).map((c) => c.value);
-  assert.deepEqual(labels, t.slots.flatMap((s) => s.matches.map((m) => m.matchLabel)));
-  assert.equal(new Set(labels).size, t.matches.length);
+test('進行表が枠を行・コートを列にした行列になる', () => {
+  // 1試合1行の縦並びだと、同時に走る試合が縦に散って当日どのコートで何が動いているか
+  // 読めない。枠とコートの対応が座標そのものになっていることを固定する。
+  for (const courts of [1, 2, 4]) {
+    const t = make({ courts });
+    const g = layoutProgressSheet(t);
+    const head = [...g.cells.values()].find((c) => c.col === 1 && c.value === '枠');
+    assert.ok(head, `${courts}コート: 見出しが無い`);
+    // 見出し行にコートが横に並ぶ
+    const courtHeads = [...g.cells.values()]
+      .filter((c) => c.row === head.row && c.col > 2)
+      .sort((a, b) => a.col - b.col)
+      .map((c) => c.value);
+    assert.deepEqual(
+      courtHeads,
+      Array.from({ length: courts }, (_, i) => `コート${i + 1}`),
+      `${courts}コート: 見出しの並び`
+    );
+    // 各試合が「その枠の行・そのコートの列」に1回だけ出る
+    const seen = new Map();
+    for (const c of g.cells.values()) {
+      const m = t.matches.find((x) => String(c.value).startsWith(`${x.label}　`));
+      if (m) seen.set(m.label, c);
+    }
+    assert.equal(seen.size, t.matches.length, `${courts}コート: 試合が漏れている`);
+    for (const slot of t.slots) {
+      const rows = new Set();
+      for (const e of slot.matches) {
+        const cell = seen.get(e.matchLabel);
+        assert.equal(cell.col, 2 + e.court, `${courts}コート: ${e.matchLabel} の列がコート${e.court}と違う`);
+        rows.add(cell.row);
+      }
+      assert.equal(rows.size <= 1, true, `${courts}コート: ${slot.label} の試合が同じ行に並んでいない`);
+    }
+  }
 });
 
 test('未対応の scoring はエラーになる', () => {
@@ -194,6 +222,24 @@ test('入力用の対戦カード列に、実際に出る文字列が収まる',
       const txt = `${refPlaceholder(m.left)} vs ${refPlaceholder(m.right)}`;
       const need = textPx(txt, THEME.sizes.body);
       assert.ok(need <= avail, `${format}/${teams}: "${txt}" は ${Math.ceil(need)}px 必要だが ${avail}px しかない`);
+    }
+  }
+});
+
+test('進行表の試合名がラウンド名と重複しない', () => {
+  // 決勝は label も roundName も「決勝」なので、素で連結すると「決勝　決勝」になる。
+  for (const format of ['single-elimination', 'double-elimination', 'full-placement']) {
+    for (const teams of [8, 10, 16]) {
+      let t;
+      try {
+        t = buildTournament({ format, teams, courts: 2, scoring: 'sets-of-3' });
+      } catch {
+        continue;
+      }
+      for (const c of layoutProgressSheet(t).cells.values()) {
+        const v = String(c.value);
+        assert.equal(/^(.+)　\1$/.test(v), false, `${format} ${teams}チーム: 「${v}」が重複している`);
+      }
     }
   }
 });
