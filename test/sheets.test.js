@@ -243,3 +243,22 @@ test('進行表の試合名がラウンド名と重複しない', () => {
     }
   }
 });
+
+test('対戦カードは未確定の試合でも誰と誰かの目印を出す', () => {
+  // 試合管理の左右をそのまま連結すると、まだ決まっていない試合の対戦カードが
+  // 「 vs 」だけになる。実シートでは19試合中12がこの状態で、当日その枠が
+  // 何の試合か進行表から読めなかった。試合管理側には目印を入れられない
+  // （勝敗判定の突き合わせに使うので、目印の文字列が勝者として確定してしまう）。
+  for (const [format, teams] of [['double-elimination', 10], ['single-elimination', 8], ['full-placement', 8]]) {
+    const t = buildTournament({ format, teams, courts: 2, scoring: 'sets-of-3' });
+    for (const [name, g] of [['進行表', layoutProgressSheet(t)], ['入力用', layoutMobileSheet(t)]]) {
+      const cards = [...g.cells.values()].filter((c) => String(c.value).includes('&" vs "&'));
+      assert.equal(cards.length, t.matches.length, `${format} ${teams} ${name}: 対戦カードの数`);
+      for (const m of t.matches) {
+        const want = [refPlaceholder(m.left), refPlaceholder(m.right)];
+        const hit = cards.find((c) => want.every((w) => String(c.value).includes(`"${w}"`)));
+        assert.ok(hit, `${format} ${teams} ${name}: ${m.label} の目印（${want.join(' / ')}）が無い`);
+      }
+    }
+  }
+});

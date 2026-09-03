@@ -38,6 +38,20 @@ export function refPlaceholder(ref) {
   return `${ref.matchLabel}の${ref.type === 'winner' ? '勝者' : '敗者'}`;
 }
 
+/**
+ * 対戦カードの表示。
+ *
+ * 試合管理の左右をそのまま連結すると、まだ決まっていない試合が「 vs 」だけになる。
+ * 試合管理側に目印を入れることはできない。あそこは勝敗判定の突き合わせに使うので、
+ * 目印の文字列がそのまま勝者として確定してしまう。表示する側で、空のときだけ
+ * 「表⑦の勝者」のような目印へ差し替える。
+ */
+export function matchCardFormula(tournament, m, controlRow) {
+  const side = (col, ref) =>
+    `IF('${TABS.control}'!$${col}$${controlRow}="","${refPlaceholder(ref)}",'${TABS.control}'!$${col}$${controlRow})`;
+  return `=${side('B', m.left)}&" vs "&${side('C', m.right)}`;
+}
+
 export function liveRefFormula(tournament, ref) {
   const placeholder = refPlaceholder(ref);
   if (ref.type === 'team') {
@@ -122,7 +136,7 @@ export function layoutMobileSheet(tournament) {
     const r = MOBILE_ROW + i;
     const c = cellRefs.controlRow(i);
     g.set(r, 1, m.label, { role: 'label' });
-    g.set(r, 2, `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`, { role: 'slot' });
+    g.set(r, 2, matchCardFormula(tournament, m, c), { role: 'slot' });
     g.set(r, 3, '', { role: 'input', input: true, validation: sc.options });
     g.set(r, 4, `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`, { role: 'slot' });
   });
@@ -190,7 +204,9 @@ export function layoutProgressSheet(tournament) {
       )
     )
   );
-  g.setColumnWidth(1, 8).setColumnWidth(2, BOX_COL_UNITS);
+  // ラベル列は「試合」など2文字しか入らないので狭くする。ここを広く取ると、
+  // 全枠ぶん縦に続く帯が太くなり、読ませたい対戦カードより目立つ。
+  g.setColumnWidth(1, 8).setColumnWidth(2, 8);
   for (let n = 1; n <= tournament.courts; n++) {
     g.setColumnWidth(courtCol(n), colUnits(courtPx + CELL_PAD_PX));
   }
@@ -200,11 +216,21 @@ export function layoutProgressSheet(tournament) {
 
   g.set(4, 1, '■ 出場チーム（ここに記入すると全タブの対戦カードに反映されます）', { role: 'section' });
   g.merge(4, 1, 4, lastCol);
+  // ラベル列を狭めたぶん、チーム名の記入欄は隣の列と結合して幅を確保する。
+  // 参照は結合範囲の左上（$B$n）のままなので、試合管理からの参照は変わらない。
   g.set(5, 1, '記号', { role: 'tableHeader' });
   g.set(5, 2, 'チーム名', { role: 'tableHeader' });
+  g.set(5, 3, '', { role: 'tableHeader' });
+  g.merge(5, 2, 5, 3);
   tournament.teamLabels.forEach((label, i) => {
-    g.set(TEAM_INPUT_ROW + i, 1, label, { role: 'label' });
-    g.set(TEAM_INPUT_ROW + i, 2, '', { role: 'input', input: true });
+    const r = TEAM_INPUT_ROW + i;
+    g.set(r, 1, label, { role: 'label' });
+    g.set(r, 2, '', { role: 'input', input: true });
+    // 結合に吸収される側。表示は左上（B）の書式が使われるので、ここは枠線が
+    // 結合範囲の右端まで引かれるようにするためだけに置く。入力欄の役割を付けると
+    // TEXT 書式の対象が2倍に数えられ、記入欄がチーム数ぶんという不変条件が崩れる。
+    g.set(r, 3, '', { role: 'body' });
+    g.merge(r, 2, r, 3);
   });
 
   // 記入欄のすぐ下の空き行に、名前の長さの目安を出す。見出しに足すと表示幅を200px超える。
@@ -235,12 +261,13 @@ export function layoutProgressSheet(tournament) {
     const byCourt = new Map(slot.matches.map((e) => [e.court, e]));
     ROWS.forEach((kind, k) => {
       if (k === 0) g.set(row + k, 1, slot.label, { role: 'label' });
-      g.set(row + k, 2, kind.label, { role: 'tableHeader' });
+      g.set(row + k, 2, kind.label, { role: 'rowLabel' });
       for (let n = 1; n <= tournament.courts; n++) {
         const entry = byCourt.get(n);
         if (!entry) {
-          // その枠で使わないコート。空欄のままだと表の升目が途切れるので、印だけ置く。
-          g.set(row + k, courtCol(n), k === 0 ? '―' : '', { role: 'body' });
+          // その枠で使わないコート。白い空欄のままだと記入できる欄に見えるので、
+          // 4行とも地色を落として「ここは使わない」と分かる形にする。
+          g.set(row + k, courtCol(n), k === 0 ? '―' : '', { role: 'unused' });
           continue;
         }
         const m = tournament.matches.find((x) => x.id === entry.matchId);
@@ -248,7 +275,7 @@ export function layoutProgressSheet(tournament) {
         const value =
           // 試合名とラウンド名が同じときは繰り返さない（「決勝　決勝」を避ける）。
           k === 0 ? (m.roundName === entry.matchLabel ? entry.matchLabel : `${entry.matchLabel}　${m.roundName}`)
-          : k === 1 ? `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`
+          : k === 1 ? matchCardFormula(tournament, m, c)
           : k === 2 ? `=IF('${TABS.control}'!$D$${c}="","",'${TABS.control}'!$D$${c})`
           : `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`;
         // 勝者のセルは列が固定でなくなった（コートが列になったため）。
@@ -258,8 +285,11 @@ export function layoutProgressSheet(tournament) {
         g.set(row + k, courtCol(n), value, style);
       }
     });
-    // 枠の番号は3行ぶんの高さで1つ。行ごとに繰り返すと、どこからどこまでが1枠か読めない。
+    // 枠の番号は4行ぶんの高さで1つ。行ごとに繰り返すと、どこからどこまでが1枠か読めない。
     g.merge(row, 1, row + ROWS.length - 1, 1);
+    // 枠の切れ目に濃い横線を1本入れる。升目の罫線と同じ細さだと4行のまとまりが見えず、
+    // どこまでが同時進行なのか目で追えない。
+    g.border(row + ROWS.length - 1, 1, row + ROWS.length - 1, lastCol, 'bottom');
     row += ROWS.length;
   }
   return g;
