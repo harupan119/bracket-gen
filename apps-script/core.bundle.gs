@@ -1070,6 +1070,8 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       // 入力済み（緑）
       muted: "#6B7280",
       // 補足テキスト
+      disabledFill: "#F2F3F5",
+      // 使わない枠の地。白のままだと記入できる欄に見える
       text: "#000000",
       white: "#FFFFFF"
     },
@@ -1097,6 +1099,11 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     // 平常時は白。同着が起きたときだけ条件付き書式で黄色くする。
     // 常時黄色だと「入力必須」に見えてしまう。
     optional: { size: "body", bold: true, box: true, align: "CENTER", text: true },
+    // 進行表の行の意味（試合／対戦／結果／勝者）。表ヘッダの濃紺を使うと、
+    // 全枠ぶん縦に続いて太い柱になり、肝心の対戦カードより目立ってしまう。
+    rowLabel: { size: "header", bold: true, color: "accent", box: true, align: "CENTER" },
+    // その枠で使わないコート。白い空欄のままだと記入できる欄に見える。
+    unused: { size: "body", color: "muted", fill: "disabledFill", box: true, align: "CENTER" },
     // 試合番号。連結列のひとつ左に右寄せで置き、線と勝者の箱へ視線をつなぐ。
     // 箱の役割ではないので地色も枠線も付けない。字は実物と同じ 11pt 太字のアクセント色。
     // 9pt のグレーにしていたときは、離れて見ると番号だけ沈んで読めなかった。
@@ -1127,6 +1134,10 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     if (ref.type === "team") return `\uFF08${ref.label}\u30C1\u30FC\u30E0\uFF09`;
     if (ref.type === "groupRank") return ref.label;
     return `${ref.matchLabel}\u306E${ref.type === "winner" ? "\u52DD\u8005" : "\u6557\u8005"}`;
+  }
+  function matchCardFormula(tournament, m, controlRow2) {
+    const side = (col2, ref) => `IF('${TABS.control}'!$${col2}$${controlRow2}="","${refPlaceholder(ref)}",'${TABS.control}'!$${col2}$${controlRow2})`;
+    return `=${side("B", m.left)}&" vs "&${side("C", m.right)}`;
   }
   function liveRefFormula(tournament, ref) {
     const placeholder = refPlaceholder(ref);
@@ -1192,7 +1203,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       const r = MOBILE_ROW + i;
       const c = cellRefs.controlRow(i);
       g.set(r, 1, m.label, { role: "label" });
-      g.set(r, 2, `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}`, { role: "slot" });
+      g.set(r, 2, matchCardFormula(tournament, m, c), { role: "slot" });
       g.set(r, 3, "", { role: "input", input: true, validation: sc.options });
       g.set(r, 4, `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`, { role: "slot" });
     });
@@ -1236,7 +1247,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         )
       )
     );
-    g.setColumnWidth(1, 8).setColumnWidth(2, BOX_COL_UNITS);
+    g.setColumnWidth(1, 8).setColumnWidth(2, 8);
     for (let n = 1; n <= tournament.courts; n++) {
       g.setColumnWidth(courtCol(n), colUnits(courtPx + CELL_PAD_PX));
     }
@@ -1246,9 +1257,14 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
     g.merge(4, 1, 4, lastCol);
     g.set(5, 1, "\u8A18\u53F7", { role: "tableHeader" });
     g.set(5, 2, "\u30C1\u30FC\u30E0\u540D", { role: "tableHeader" });
+    g.set(5, 3, "", { role: "tableHeader" });
+    g.merge(5, 2, 5, 3);
     tournament.teamLabels.forEach((label, i) => {
-      g.set(TEAM_INPUT_ROW + i, 1, label, { role: "label" });
-      g.set(TEAM_INPUT_ROW + i, 2, "", { role: "input", input: true });
+      const r = TEAM_INPUT_ROW + i;
+      g.set(r, 1, label, { role: "label" });
+      g.set(r, 2, "", { role: "input", input: true });
+      g.set(r, 3, "", { role: "body" });
+      g.merge(r, 2, r, 3);
     });
     g.set(
       TEAM_INPUT_ROW + tournament.teams,
@@ -1276,18 +1292,18 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
       const byCourt = new Map(slot.matches.map((e) => [e.court, e]));
       ROWS.forEach((kind, k) => {
         if (k === 0) g.set(row + k, 1, slot.label, { role: "label" });
-        g.set(row + k, 2, kind.label, { role: "tableHeader" });
+        g.set(row + k, 2, kind.label, { role: "rowLabel" });
         for (let n = 1; n <= tournament.courts; n++) {
           const entry = byCourt.get(n);
           if (!entry) {
-            g.set(row + k, courtCol(n), k === 0 ? "\u2015" : "", { role: "body" });
+            g.set(row + k, courtCol(n), k === 0 ? "\u2015" : "", { role: "unused" });
             continue;
           }
           const m = tournament.matches.find((x) => x.id === entry.matchId);
           const c = cellRefs.controlRow(matchIndex(tournament, entry.matchId));
           const value2 = (
             // 試合名とラウンド名が同じときは繰り返さない（「決勝　決勝」を避ける）。
-            k === 0 ? m.roundName === entry.matchLabel ? entry.matchLabel : `${entry.matchLabel}\u3000${m.roundName}` : k === 1 ? `='${TABS.control}'!$B$${c}&" vs "&'${TABS.control}'!$C$${c}` : k === 2 ? `=IF('${TABS.control}'!$D$${c}="","",'${TABS.control}'!$D$${c})` : `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`
+            k === 0 ? m.roundName === entry.matchLabel ? entry.matchLabel : `${entry.matchLabel}\u3000${m.roundName}` : k === 1 ? matchCardFormula(tournament, m, c) : k === 2 ? `=IF('${TABS.control}'!$D$${c}="","",'${TABS.control}'!$D$${c})` : `=IF('${TABS.control}'!$E$${c}="","",'${TABS.control}'!$E$${c})`
           );
           const style = { role: kind.role };
           if (k === 3) style.progressWinner = true;
@@ -1295,6 +1311,7 @@ ${teams} \u30C1\u30FC\u30E0\u306A\u3089 format: single \u307E\u305F\u306F double
         }
       });
       g.merge(row, 1, row + ROWS.length - 1, 1);
+      g.border(row + ROWS.length - 1, 1, row + ROWS.length - 1, lastCol, "bottom");
       row += ROWS.length;
     }
     return g;
