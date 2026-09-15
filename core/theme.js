@@ -17,6 +17,7 @@ export const THEME = {
     inputFill: '#FFF2CC',   // 入力欄（黄）
     doneFill: '#E2F0D9',    // 入力済み（緑）
     muted: '#6B7280',       // 補足テキスト
+    disabledFill: '#F2F3F5', // 使わない枠の地。白のままだと記入できる欄に見える
     text: '#000000',
     white: '#FFFFFF',
   },
@@ -48,6 +49,11 @@ export const ROLES = {
   // 平常時は白。同着が起きたときだけ条件付き書式で黄色くする。
   // 常時黄色だと「入力必須」に見えてしまう。
   optional:    { size: 'body',    bold: true, box: true, align: 'CENTER', text: true },
+  // 進行表の行の意味（試合／対戦／結果／勝者）。表ヘッダの濃紺を使うと、
+  // 全枠ぶん縦に続いて太い柱になり、肝心の対戦カードより目立ってしまう。
+  rowLabel:    { size: 'header',  bold: true, color: 'accent', box: true, align: 'CENTER' },
+  // その枠で使わないコート。白い空欄のままだと記入できる欄に見える。
+  unused:      { size: 'body',    color: 'muted', fill: 'disabledFill', box: true, align: 'CENTER' },
   // 試合番号。連結列のひとつ左に右寄せで置き、線と勝者の箱へ視線をつなぐ。
   // 箱の役割ではないので地色も枠線も付けない。字は実物と同じ 11pt 太字のアクセント色。
   // 9pt のグレーにしていたときは、離れて見ると番号だけ沈んで読めなかった。
